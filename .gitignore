@@ -36,4 +36,5 @@ Thumbs.db
 
 # Firebase CLI cache e logs locais
 .firebase/
+**/.firebase/
 debug.log
