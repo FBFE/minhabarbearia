@@ -29,6 +29,7 @@ import '../../../core/widgets/service_image_crop_dialog.dart';
 import '../../../core/providers/fcm_provider.dart';
 import '../../../core/providers/firebase_providers.dart';
 import '../../../core/utils/color_utils.dart';
+import '../../../core/utils/firestore_user_error.dart';
 import '../../../core/utils/image_utils.dart';
 import '../../../core/utils/platform_admin_client.dart';
 import 'dashboard_dre_tab.dart';
@@ -2778,7 +2779,7 @@ class _AppointmentsCardState extends ConsumerState<_AppointmentsCard> {
                 backgroundColor: Colors.deepOrange,
                 duration: const Duration(seconds: 7),
                 content: Text(
-                  'Agendamento concluído, mas houve problema ao registrar consumo dos produtos: $e '
+                  'Agendamento concluído, mas houve problema ao registrar consumo dos produtos: ${firestoreUserVisibleError(e)} '
                   '— confira Serviços (produtos ligados ao serviço) ou vá a Estoque e use «Sincronizar consumos dos serviços».',
                   style: const TextStyle(height: 1.3),
                 ),

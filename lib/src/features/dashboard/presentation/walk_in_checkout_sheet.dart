@@ -10,6 +10,7 @@ import '../../../core/models/service.dart';
 import '../../../core/models/stock_movement.dart';
 import '../../../core/providers/barber_shop_providers.dart';
 import '../../../core/providers/firebase_providers.dart';
+import '../../../core/utils/firestore_user_error.dart';
 import '../../../core/widgets/service_storage_image.dart';
 import '../logic/appointment_completion_logic.dart';
 
@@ -252,7 +253,7 @@ class _WalkInCheckoutSheetState extends ConsumerState<WalkInCheckoutSheet> {
                 backgroundColor: Colors.deepOrange,
                 duration: const Duration(seconds: 7),
                 content: Text(
-                  'Atendimento registado mas a baixa automática dos produtos falhou: $e '
+                  'Atendimento registado mas a baixa automática dos produtos falhou: ${firestoreUserVisibleError(e)} '
                   'Use Estoque → «Sincronizar consumos dos serviços».',
                   style: const TextStyle(height: 1.3),
                 ),

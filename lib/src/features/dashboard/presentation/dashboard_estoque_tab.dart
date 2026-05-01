@@ -8,6 +8,7 @@ import '../../../core/models/product.dart';
 import '../../../core/models/stock_movement.dart';
 import '../../../core/providers/barber_shop_providers.dart';
 import '../../../core/providers/firebase_providers.dart';
+import '../../../core/utils/firestore_user_error.dart';
 import '../logic/appointment_completion_logic.dart';
 
 const _productCategories = [
@@ -92,29 +93,45 @@ class _EstoqueCardState extends ConsumerState<_EstoqueCard> {
     setState(() => _syncConsumptionsLoading = true);
     try {
       final firestore = ref.read(firestoreProvider);
-      final n = await syncMissingConsumptionForCompletedAppointments(
+      final result = await syncMissingConsumptionForCompletedAppointments(
         ref: ref,
         firestore: firestore,
         slug: widget.slug,
       );
       if (!mounted) return;
+      final n = result.appliedCount;
+      final errs = result.skippedErrors;
+      final hint = result.firstErrorHint;
+      late final String summary;
+      if (n == 0 && errs == 0) {
+        summary =
+            'Nada a corrigir: todos os atendimentos já tinham baixa de consumo registada '
+            '(ou os serviços não têm produtos vinculados).';
+      } else if (n > 0 && errs > 0) {
+        summary =
+            'Baixas aplicadas em $n atendimento(s). $errs atendimento(s) falharam: ${hint ?? "ver detalhes no log"}.';
+      } else if (n > 0) {
+        summary = 'Baixas de produto aplicadas para $n atendimento(s) que estavam em falta.';
+      } else if (errs > 0 && hint != null) {
+        summary = 'Sincronização não aplicou novas baixas. Alguns registos falharam: $hint';
+      } else {
+        summary = 'Nenhuma nova baixa aplicada.';
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            n == 0
-                ? 'Nada a corrigir: todos os atendimentos já tinham baixa de consumo registada '
-                    '(ou os serviços não têm produtos vinculados).'
-                : 'Baixas de produto aplicadas para $n atendimento(s) que estavam em falta.',
-          ),
-          backgroundColor: Colors.green.shade800,
-          duration: const Duration(seconds: 5),
+          content: Text(summary),
+          backgroundColor: errs > 0
+              ? (n > 0 ? Colors.deepOrange.shade800 : Theme.of(context).colorScheme.error)
+              : Colors.green.shade800,
+          duration: Duration(seconds: errs > 0 ? 7 : 5),
         ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erro ao sincronizar: $e'),
+          content: Text('Erro ao sincronizar: ${firestoreUserVisibleError(e)}'),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );

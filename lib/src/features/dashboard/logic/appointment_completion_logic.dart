@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/barber_shop.dart';
+import '../../../core/utils/firestore_user_error.dart';
 import '../../../core/models/product.dart';
 import '../../../core/models/service.dart';
 import '../../../core/models/stock_movement.dart';
@@ -29,9 +30,10 @@ Future<bool> appointmentHasRecordedServiceConsumption(
   return false;
 }
 
-/// Para atendimentos concluídos sem movimento `service_use` vinculado: tenta baixar de novo
-/// produtos configurados nos serviços (idempotente se já houve baixa).
-Future<int> syncMissingConsumptionForCompletedAppointments({
+/// Resultado da sincronização de consumos: [appliedCount] novas baixas; [skippedErrors]
+/// documentos onde algo falhou (rede/permissão/dados inválidos) sem bloquear o restante.
+Future<({int appliedCount, int skippedErrors, String? firstErrorHint})>
+    syncMissingConsumptionForCompletedAppointments({
   required WidgetRef ref,
   required FirebaseFirestore firestore,
   required String slug,
@@ -39,21 +41,27 @@ Future<int> syncMissingConsumptionForCompletedAppointments({
   final qs =
       await firestore.collection('appointments').where('barberShopId', isEqualTo: slug).limit(500).get();
   var n = 0;
+  var skipped = 0;
+  String? firstHint;
   for (final doc in qs.docs) {
     final status = doc.data()['status'] as String? ?? '';
     if (status != 'completed') continue;
-    final applied =
-        await applyServiceConsumptionsFromAppointmentDoc(
-      ref: ref,
-      firestore: firestore,
-      slug: slug,
-      appointmentId: doc.id,
-    );
-    if (applied) n++;
+    try {
+      final applied = await applyServiceConsumptionsFromAppointmentDoc(
+        ref: ref,
+        firestore: firestore,
+        slug: slug,
+        appointmentId: doc.id,
+      );
+      if (applied) n++;
+    } catch (e) {
+      skipped++;
+      firstHint ??= firestoreUserVisibleError(e);
+    }
   }
   ref.invalidate(productsProvider(slug));
   ref.invalidate(stockMovementsProvider(slug));
-  return n;
+  return (appliedCount: n, skippedErrors: skipped, firstErrorHint: firstHint);
 }
 
 /// Gera código alfanumérico para voucher de fidelidade.
