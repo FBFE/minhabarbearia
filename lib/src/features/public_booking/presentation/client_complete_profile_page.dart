@@ -24,7 +24,12 @@ final _cpfMask = MaskTextInputFormatter(
   filter: {'#': RegExp(r'[0-9]')},
 );
 
-/// Completar cadastro após login com Google ou criação de conta por e-mail.
+final _referredByMaskComplete = MaskTextInputFormatter(
+  mask: '(##) #####-####',
+  filter: {'#': RegExp(r'[0-9]')},
+);
+
+/// Completar cadastro após login/cadastro com Google.
 class ClientCompleteProfilePage extends ConsumerStatefulWidget {
   const ClientCompleteProfilePage({
     super.key,
@@ -34,6 +39,8 @@ class ClientCompleteProfilePage extends ConsumerStatefulWidget {
     required this.googleUid,
     this.googlePhotoUrl,
     this.authMethod = 'google',
+    /// Vindo do link ?ref= (WhatsApp) — pré-preenche indicação.
+    this.referralRefParam,
   });
 
   final String slug;
@@ -41,8 +48,9 @@ class ClientCompleteProfilePage extends ConsumerStatefulWidget {
   final String googleEmail;
   final String googleUid;
   final String? googlePhotoUrl;
-  /// `google` | `password` — afeta textos de ajuda na tela.
+  /// `google` apenas na prática — mantido para compatibilidade de rotas/antigos extras.
   final String authMethod;
+  final String? referralRefParam;
 
   @override
   ConsumerState<ClientCompleteProfilePage> createState() => _ClientCompleteProfilePageState();
@@ -54,6 +62,7 @@ class _ClientCompleteProfilePageState extends ConsumerState<ClientCompleteProfil
   final _dobController = TextEditingController();
   final _phoneController = TextEditingController();
   final _cpfController = TextEditingController();
+  final _referredByController = TextEditingController();
 
   bool _lgpdConsent = false;
   bool _loading = false;
@@ -63,6 +72,19 @@ class _ClientCompleteProfilePageState extends ConsumerState<ClientCompleteProfil
   void initState() {
     super.initState();
     _nameController.text = widget.googleName;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ref = widget.referralRefParam;
+      if (ref != null && ref.isNotEmpty) {
+        final digits = ref.replaceAll(RegExp(r'[^\d]'), '');
+        if (digits.length >= 10) {
+          final formatted = _referredByMaskComplete.formatEditUpdate(
+            TextEditingValue(),
+            TextEditingValue(text: digits.length > 11 ? digits.substring(0, 11) : digits),
+          ).text;
+          _referredByController.text = formatted;
+        }
+      }
+    });
   }
 
   @override
@@ -71,6 +93,7 @@ class _ClientCompleteProfilePageState extends ConsumerState<ClientCompleteProfil
     _dobController.dispose();
     _phoneController.dispose();
     _cpfController.dispose();
+    _referredByController.dispose();
     super.dispose();
   }
 
@@ -92,6 +115,8 @@ class _ClientCompleteProfilePageState extends ConsumerState<ClientCompleteProfil
     final dob = _dobController.text.trim();
     final phone = _normalizePhone(_phoneController.text);
     final cpf = _normalizePhone(_cpfController.text);
+    final referredByDigits = _normalizePhone(_referredByController.text);
+    final referredByWhatsapp = referredByDigits.length >= 10 ? referredByDigits : null;
 
     if (phone.length < 10 || phone.length > 11) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -128,11 +153,33 @@ class _ClientCompleteProfilePageState extends ConsumerState<ClientCompleteProfil
         'preferredLoyaltyCardStyle': _preferredLoyaltyCardStyle,
         'loyaltyPoints': 0,
         'totalAppointments': 0,
+        if (referredByWhatsapp != null) 'referredByWhatsapp': referredByWhatsapp,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
       await clientRef.set(clientData);
+
+      final shop = ref.read(barberShopBySlugProvider(widget.slug)).valueOrNull;
+      final referralPoints = shop?.referralPoints ?? 30;
+      if (referredByWhatsapp != null &&
+          referredByWhatsapp != phone &&
+          referredByWhatsapp.isNotEmpty &&
+          referralPoints > 0) {
+        final referrerSnap = await firestore
+            .collection(barbershopsCollection)
+            .doc(widget.slug)
+            .collection('clients')
+            .where('whatsapp', isEqualTo: referredByWhatsapp)
+            .limit(1)
+            .get();
+        if (referrerSnap.docs.isNotEmpty) {
+          await referrerSnap.docs.first.reference.update({
+            'loyaltyPoints': FieldValue.increment(referralPoints),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      }
 
       final client = Client(
         id: widget.googleUid,
@@ -147,6 +194,7 @@ class _ClientCompleteProfilePageState extends ConsumerState<ClientCompleteProfil
         preferredLoyaltyCardStyle: _preferredLoyaltyCardStyle,
         loyaltyPoints: 0,
         totalAppointments: 0,
+        referredByWhatsapp: referredByWhatsapp,
       );
 
       if (mounted) {
@@ -238,9 +286,7 @@ class _ClientCompleteProfilePageState extends ConsumerState<ClientCompleteProfil
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      widget.authMethod == 'google'
-                          ? 'Você entrou com Google. Informe nome, nascimento e contato para concluir.'
-                          : 'Quase lá! Informe nome, nascimento e contato para concluir seu cadastro.',
+                      'Informe nome, nascimento e contato para concluir seu cadastro.',
                       style: GoogleFonts.poppins(
                         fontSize: 14,
                         color: const Color(0xFF5C636A),
@@ -263,7 +309,7 @@ class _ClientCompleteProfilePageState extends ConsumerState<ClientCompleteProfil
                     TextFormField(
                       initialValue: widget.googleEmail,
                       decoration: InputDecoration(
-                        labelText: widget.authMethod == 'google' ? 'E-mail (Google)' : 'E-mail',
+                        labelText: 'E-mail (Google)',
                         border: const OutlineInputBorder(),
                         filled: true,
                         fillColor: const Color(0xFFF5F6F8),
@@ -323,6 +369,27 @@ class _ClientCompleteProfilePageState extends ConsumerState<ClientCompleteProfil
                       validator: (v) {
                         final d = _normalizePhone(v ?? '');
                         if (d.isNotEmpty && d.length != 11) return 'Se informar, use 11 dígitos';
+                        return null;
+                      },
+                      enabled: !_loading,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _referredByController,
+                      decoration: const InputDecoration(
+                        labelText: 'Foi indicado? Quem te indicou? (WhatsApp — opcional)',
+                        hintText: '(00) 00000-0000',
+                        border: OutlineInputBorder(),
+                        filled: true,
+                        fillColor: Color(0xFFF5F6F8),
+                      ),
+                      keyboardType: TextInputType.phone,
+                      inputFormatters: [_whatsappMask],
+                      validator: (v) {
+                        final d = _normalizePhone(v ?? '');
+                        if (d.isNotEmpty && (d.length < 10 || d.length > 11)) {
+                          return 'Se informar, use um WhatsApp válido';
+                        }
                         return null;
                       },
                       enabled: !_loading,

@@ -237,13 +237,29 @@ class _WalkInCheckoutSheetState extends ConsumerState<WalkInCheckoutSheet> {
         });
         appointmentId = doc.id;
 
-        await applyServiceConsumptionsForServices(
-          ref: ref,
-          firestore: firestore,
-          slug: widget.slug,
-          appointmentId: appointmentId,
-          servicesToApply: List<Service>.from(_serviceCart),
-        );
+        try {
+          await applyServiceConsumptionsForServices(
+            ref: ref,
+            firestore: firestore,
+            slug: widget.slug,
+            appointmentId: appointmentId,
+            servicesToApply: List<Service>.from(_serviceCart),
+          );
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                backgroundColor: Colors.deepOrange,
+                duration: const Duration(seconds: 7),
+                content: Text(
+                  'Atendimento registado mas a baixa automática dos produtos falhou: $e '
+                  'Use Estoque → «Sincronizar consumos dos serviços».',
+                  style: const TextStyle(height: 1.3),
+                ),
+              ),
+            );
+          }
+        }
 
         if (cid != null && cid.isNotEmpty) {
           await firestore

@@ -33,6 +33,7 @@ import '../../../core/utils/image_utils.dart';
 import '../../../core/utils/platform_admin_client.dart';
 import 'dashboard_dre_tab.dart';
 import 'dashboard_estoque_tab.dart';
+import 'owner_activity_log_sheet.dart';
 import 'walk_in_checkout_sheet.dart';
 import '../logic/appointment_completion_logic.dart';
 import 'owner_onboarding_page.dart';
@@ -261,6 +262,63 @@ class _DashboardScaffoldState extends ConsumerState<_DashboardScaffold> {
     super.dispose();
   }
 
+  Future<void> _activateWebNotifications() async {
+    if (!kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Notificações push estão disponíveis na versão web (PWA).')),
+      );
+      return;
+    }
+    final r = await requestAndRegisterWebNotifications();
+    if (!mounted) return;
+    if (!r.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Não foi possível ativar. Permita notificações no navegador e confira a chave VAPID (Firebase → Cloud Messaging → Web Push).',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    if (r.ownerShopsUpdated > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            r.ownerShopsUpdated == 1
+                ? 'Notificações ativadas para o seu negócio.'
+                : 'Notificações ativadas em ${r.ownerShopsUpdated} negócios.',
+          ),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+      return;
+    }
+    final shopDocId = widget.barberShop?.id;
+    if (shopDocId != null) {
+      final token = await requestFcmTokenAndPermission();
+      if (!mounted) return;
+      if (token != null) {
+        await saveOwnerFcmToken(ref, shopDocId, token);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Notificações ativadas para este negócio.'),
+              backgroundColor: Colors.green.shade700,
+            ),
+          );
+        }
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Quando o negócio carregar, use o botão «Ativar notificações» abaixo.'),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final primary = widget.primaryColor;
@@ -309,82 +367,53 @@ class _DashboardScaffoldState extends ConsumerState<_DashboardScaffold> {
               tooltip: 'Painel do app (admin)',
               onPressed: () => context.go('/admin'),
             ),
-          IconButton(
-            onPressed: () async {
-              if (!kIsWeb) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Notificações push estão disponíveis na versão web (PWA).')),
-                );
-                return;
-              }
-              final r = await requestAndRegisterWebNotifications();
-              if (!context.mounted) return;
-              if (!r.success) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Não foi possível ativar. Permita notificações no navegador e confira a chave VAPID (Firebase → Cloud Messaging → Web Push).',
-                    ),
-                    backgroundColor: Colors.orange,
-                  ),
-                );
-                return;
-              }
-              if (r.ownerShopsUpdated > 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      r.ownerShopsUpdated == 1
-                          ? 'Notificações ativadas para o seu negócio.'
-                          : 'Notificações ativadas em ${r.ownerShopsUpdated} negócios.',
-                    ),
-                    backgroundColor: Colors.green.shade700,
-                  ),
-                );
-                return;
-              }
-              final shopDocId = widget.barberShop?.id;
-              if (shopDocId != null) {
-                final token = await requestFcmTokenAndPermission();
-                if (!context.mounted) return;
-                if (token != null) {
-                  await saveOwnerFcmToken(ref, shopDocId, token);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text('Notificações ativadas para este negócio.'),
-                        backgroundColor: Colors.green.shade700,
-                      ),
-                    );
-                  }
+          PopupMenuButton<String>(
+            tooltip: 'Registo da loja e notificações',
+            icon: const Icon(Icons.notifications_outlined),
+            offset: const Offset(0, 40),
+            onSelected: (v) async {
+              if (!mounted) return;
+              if (v == 'log') {
+                final slug = shop?.slug;
+                if (slug == null || slug.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Carregue o negócio primeiro.')),
+                  );
+                  return;
                 }
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Quando o negócio carregar, use o botão «Ativar notificações» abaixo.'),
-                  ),
-                );
+                await showOwnerActivityLogBottomSheet(context, ref, slug);
+                return;
               }
+              await _activateWebNotifications();
             },
-            tooltip: 'Ativar notificações',
-            icon: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Icon(Icons.notifications_outlined),
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFEF4444),
-                      shape: BoxShape.circle,
-                    ),
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'log',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.history_rounded, color: Colors.indigo.shade700),
+                  title: Text('Registo da loja', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                    'Atendimentos e movimentações de stock',
+                    style: GoogleFonts.poppins(fontSize: 11),
                   ),
                 ),
-              ],
-            ),
+              ),
+              PopupMenuItem(
+                value: 'push',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.notifications_active_outlined),
+                  title: Text('Ativar notificações push (web)', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                    'Lembretes no navegador / PWA',
+                    style: GoogleFonts.poppins(fontSize: 11),
+                  ),
+                ),
+              ),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.settings),
@@ -2734,12 +2763,29 @@ class _AppointmentsCardState extends ConsumerState<_AppointmentsCard> {
         }
       }
       if (newStatus == 'completed') {
-        await applyServiceConsumptionsFromAppointmentDoc(
-          ref: ref,
-          firestore: firestore,
-          slug: widget.slug,
-          appointmentId: appointmentId,
-        );
+        try {
+          await applyServiceConsumptionsFromAppointmentDoc(
+            ref: ref,
+            firestore: firestore,
+            slug: widget.slug,
+            appointmentId: appointmentId,
+          );
+        } catch (e) {
+          debugPrint('applyServiceConsumptionsFromAppointmentDoc: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                backgroundColor: Colors.deepOrange,
+                duration: const Duration(seconds: 7),
+                content: Text(
+                  'Agendamento concluído, mas houve problema ao registrar consumo dos produtos: $e '
+                  '— confira Serviços (produtos ligados ao serviço) ou vá a Estoque e use «Sincronizar consumos dos serviços».',
+                  style: const TextStyle(height: 1.3),
+                ),
+              ),
+            );
+          }
+        }
       }
       ref.invalidate(appointmentsProvider(widget.slug));
       if (mounted) {

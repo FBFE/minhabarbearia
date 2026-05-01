@@ -8,6 +8,7 @@ import '../../../core/models/product.dart';
 import '../../../core/models/stock_movement.dart';
 import '../../../core/providers/barber_shop_providers.dart';
 import '../../../core/providers/firebase_providers.dart';
+import '../logic/appointment_completion_logic.dart';
 
 const _productCategories = [
   'Shampoo',
@@ -63,6 +64,7 @@ class _EstoqueCard extends ConsumerStatefulWidget {
 class _EstoqueCardState extends ConsumerState<_EstoqueCard> {
   final _searchController = TextEditingController();
   String? _filterCategory;
+  bool _syncConsumptionsLoading = false;
 
   @override
   void dispose() {
@@ -83,6 +85,42 @@ class _EstoqueCardState extends ConsumerState<_EstoqueCard> {
       }
     }
     return (inC, outC);
+  }
+
+  Future<void> _syncMissingServicoConsumptions() async {
+    if (_syncConsumptionsLoading) return;
+    setState(() => _syncConsumptionsLoading = true);
+    try {
+      final firestore = ref.read(firestoreProvider);
+      final n = await syncMissingConsumptionForCompletedAppointments(
+        ref: ref,
+        firestore: firestore,
+        slug: widget.slug,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            n == 0
+                ? 'Nada a corrigir: todos os atendimentos já tinham baixa de consumo registada '
+                    '(ou os serviços não têm produtos vinculados).'
+                : 'Baixas de produto aplicadas para $n atendimento(s) que estavam em falta.',
+          ),
+          backgroundColor: Colors.green.shade800,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao sincronizar: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _syncConsumptionsLoading = false);
+    }
   }
 
   @override
@@ -169,7 +207,30 @@ class _EstoqueCardState extends ConsumerState<_EstoqueCard> {
               loading: () => const SizedBox(height: 40),
               error: (_, __) => const SizedBox.shrink(),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _syncConsumptionsLoading ? null : _syncMissingServicoConsumptions,
+              icon: _syncConsumptionsLoading
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    )
+                  : const Icon(Icons.sync_rounded),
+              label: Text(
+                _syncConsumptionsLoading ? 'Sincronizando…' : 'Sincronizar consumos dos serviços',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+              ),
+            ),
+            Text(
+              'Usa quando a baixa automática falhou antes (ex.: após atualizar a app). '
+              'Revê atendimentos concluídos sem movimento de «uso nos serviços».',
+              style: GoogleFonts.poppins(fontSize: 11, height: 1.35, color: const Color(0xFF6B7280)),
+            ),
+            const SizedBox(height: 16),
             Text(
               'Seus produtos',
               style: GoogleFonts.poppins(

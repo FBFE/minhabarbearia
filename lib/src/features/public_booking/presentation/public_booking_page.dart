@@ -850,7 +850,9 @@ class _BookingFormState extends ConsumerState<_BookingForm> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () => context.go('/b/${widget.barberShop.slug}/login'),
+                        onPressed: () => context.go(
+                          '/b/${widget.barberShop.slug}/login${widget.refParam != null ? '?ref=${Uri.encodeComponent(widget.refParam!)}' : ''}',
+                        ),
                         icon: const Icon(Icons.login_rounded, size: 22),
                         label: const Text('Entrar'),
                         style: OutlinedButton.styleFrom(

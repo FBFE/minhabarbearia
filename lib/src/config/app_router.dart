@@ -188,9 +188,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             name: 'clientLogin',
             builder: (context, state) {
               final slug = state.pathParameters['slug']!;
+              final refInvite = state.uri.queryParameters['ref'];
               return PublicShellPage(
                 slug: slug,
-                child: ClientLoginPage(slug: slug),
+                child: ClientLoginPage(slug: slug, refInvite: refInvite),
               );
             },
           ),
@@ -227,6 +228,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               final uid = extra?['uid'] as String? ?? '';
               final photoUrl = extra?['photoUrl'] as String?;
               final authMethod = extra?['authMethod'] as String? ?? 'google';
+              final referralRef = extra?['referralRef'] as String?;
               return PublicShellPage(
                 slug: slug,
                 child: ClientCompleteProfilePage(
@@ -236,6 +238,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   googleUid: uid,
                   googlePhotoUrl: photoUrl,
                   authMethod: authMethod,
+                  referralRefParam: referralRef,
                 ),
               );
             },

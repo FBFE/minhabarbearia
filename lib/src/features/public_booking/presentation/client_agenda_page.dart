@@ -304,19 +304,23 @@ class _VerifyFirstView extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Na página inicial, informe seu WhatsApp e data de nascimento para ver sua agenda.',
+                'Na página de agendamento, use Entrar ou Cadastrar e faça login com sua conta Google (versão web do link).',
                 style: GoogleFonts.poppins(fontSize: 14, color: const Color(0xFF5C636A)),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
               FilledButton.icon(
-                onPressed: () => context.go('/b/$slug/agendar'),
-                icon: const Icon(Icons.home_rounded),
-                label: const Text('Ir para página inicial'),
+                onPressed: () => context.go('/b/$slug/login'),
+                icon: const Icon(Icons.login_rounded),
+                label: const Text('Entrar com Google'),
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFFFF4081),
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                 ),
+              ),
+              TextButton(
+                onPressed: () => context.go('/b/$slug/agendar'),
+                child: Text('Ir para página inicial', style: GoogleFonts.poppins(color: const Color(0xFF5C636A))),
               ),
             ],
           ),
@@ -832,7 +836,7 @@ class _AppointmentCard extends ConsumerWidget {
                         ),
                       ] else
                         Text(
-                          'Associe sua conta (e-mail ou Google em Perfil ou cadastro) para confirmar ou recusar aqui.',
+                          'Associe sua conta Google (Perfil ou login) para confirmar ou recusar aqui.',
                           style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF5C636A), height: 1.35),
                         ),
                     ],

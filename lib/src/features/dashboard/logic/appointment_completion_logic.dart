@@ -9,6 +9,53 @@ import '../../../core/models/stock_movement.dart';
 import '../../../core/models/voucher.dart';
 import '../../../core/providers/barber_shop_providers.dart';
 
+Future<bool> appointmentHasRecordedServiceConsumption(
+  FirebaseFirestore firestore,
+  String slug,
+  String appointmentId,
+) async {
+  if (appointmentId.isEmpty) return false;
+  final snap = await firestore
+      .collection(barbershopsCollection)
+      .doc(slug)
+      .collection('stock_movements')
+      .where('linkedAppointmentId', isEqualTo: appointmentId)
+      .limit(50)
+      .get();
+  for (final d in snap.docs) {
+    final t = d.data()['type'] as String? ?? '';
+    if (t == 'service_use') return true;
+  }
+  return false;
+}
+
+/// Para atendimentos concluídos sem movimento `service_use` vinculado: tenta baixar de novo
+/// produtos configurados nos serviços (idempotente se já houve baixa).
+Future<int> syncMissingConsumptionForCompletedAppointments({
+  required WidgetRef ref,
+  required FirebaseFirestore firestore,
+  required String slug,
+}) async {
+  final qs =
+      await firestore.collection('appointments').where('barberShopId', isEqualTo: slug).limit(500).get();
+  var n = 0;
+  for (final doc in qs.docs) {
+    final status = doc.data()['status'] as String? ?? '';
+    if (status != 'completed') continue;
+    final applied =
+        await applyServiceConsumptionsFromAppointmentDoc(
+      ref: ref,
+      firestore: firestore,
+      slug: slug,
+      appointmentId: doc.id,
+    );
+    if (applied) n++;
+  }
+  ref.invalidate(productsProvider(slug));
+  ref.invalidate(stockMovementsProvider(slug));
+  return n;
+}
+
 /// Gera código alfanumérico para voucher de fidelidade.
 String generateVoucherCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -113,14 +160,28 @@ void showLoyaltyVouchersSnackBar(
 }
 
 /// Baixa de estoque (consumo dos serviços) ao concluir agendamento ou atendimento avulso.
-Future<void> applyServiceConsumptionsForServices({
+/// Retorna [true] se executou uma transação de baixa; [false] se não havia consumo ou já estava registado.
+Future<bool> applyServiceConsumptionsForServices({
   required WidgetRef ref,
   required FirebaseFirestore firestore,
   required String slug,
   required String appointmentId,
   required List<Service> servicesToApply,
 }) async {
-  if (!servicesToApply.any((s) => s.productConsumptions.isNotEmpty)) return;
+  if (!servicesToApply.any((s) => s.productConsumptions.isNotEmpty)) return false;
+
+  if (appointmentId.isNotEmpty) {
+    final already = await appointmentHasRecordedServiceConsumption(
+      firestore,
+      slug,
+      appointmentId,
+    );
+    if (already) {
+      ref.invalidate(productsProvider(slug));
+      ref.invalidate(stockMovementsProvider(slug));
+      return false;
+    }
+  }
 
   final productsRef =
       firestore.collection(barbershopsCollection).doc(slug).collection('products');
@@ -185,10 +246,11 @@ Future<void> applyServiceConsumptionsForServices({
   });
   ref.invalidate(productsProvider(slug));
   ref.invalidate(stockMovementsProvider(slug));
+  return true;
 }
 
 /// Lê o documento do agendamento, resolve os [Service] e aplica consumo de produtos.
-Future<void> applyServiceConsumptionsFromAppointmentDoc({
+Future<bool> applyServiceConsumptionsFromAppointmentDoc({
   required WidgetRef ref,
   required FirebaseFirestore firestore,
   required String slug,
@@ -196,14 +258,15 @@ Future<void> applyServiceConsumptionsFromAppointmentDoc({
 }) async {
   final appointmentSnap = await firestore.collection('appointments').doc(appointmentId).get();
   final appointmentData = appointmentSnap.data();
-  if (appointmentData == null) return;
+  if (appointmentData == null) return false;
 
   final rawServices = appointmentData['services'] as List<dynamic>?;
   final serviceIds = <String>{};
   if (rawServices != null) {
     for (final e in rawServices) {
-      if (e is Map<String, dynamic>) {
-        final sid = e['serviceId'] as String?;
+      if (e is Map) {
+        final row = Map<String, dynamic>.from(e);
+        final sid = row['serviceId'] as String?;
         if (sid != null && sid.isNotEmpty) serviceIds.add(sid);
       }
     }
@@ -224,7 +287,9 @@ Future<void> applyServiceConsumptionsFromAppointmentDoc({
     }
   }
 
-  await applyServiceConsumptionsForServices(
+  if (servicesToApply.isEmpty) return false;
+
+  return applyServiceConsumptionsForServices(
     ref: ref,
     firestore: firestore,
     slug: slug,

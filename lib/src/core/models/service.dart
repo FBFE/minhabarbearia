@@ -23,11 +23,12 @@ class ServiceProductUse {
       };
 
   static ServiceProductUse? fromMap(dynamic e) {
-    if (e is! Map<String, dynamic>) return null;
-    final id = e['productId'] as String?;
+    if (e == null || e is! Map) return null;
+    final m = Map<String, dynamic>.from(e);
+    final id = m['productId'] as String?;
     if (id == null || id.isEmpty) return null;
-    final percent = (e['consumptionPercent'] as num?)?.toDouble();
-    final q = (e['quantity'] as num?)?.toDouble() ?? 0;
+    final percent = (m['consumptionPercent'] as num?)?.toDouble();
+    final q = (m['quantity'] as num?)?.toDouble() ?? 0;
     if (percent != null && percent > 0) {
       return ServiceProductUse(productId: id, consumptionPercent: percent);
     }

@@ -15,69 +15,8 @@ class LoginPage extends ConsumerStatefulWidget {
 }
 
 class _LoginPageState extends ConsumerState<LoginPage> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  String? _getFirebaseErrorMessage(String code) {
-    switch (code) {
-      case 'user-not-found':
-        return 'Usuário não encontrado.';
-      case 'wrong-password':
-        return 'Senha incorreta.';
-      case 'invalid-email':
-        return 'E-mail inválido.';
-      case 'user-disabled':
-        return 'Esta conta foi desativada.';
-      case 'invalid-credential':
-        return 'E-mail ou senha inválidos.';
-      case 'invalid-api-key':
-      case 'api-key-not-valid':
-        return 'API key do Firebase inválida. Execute: dart run flutterfire configure';
-      case 'too-many-requests':
-        return 'Muitas tentativas. Tente novamente mais tarde.';
-      default:
-        return 'E-mail ou senha inválidos.';
-    }
-  }
-
-  Future<void> _signInWithEmail() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final auth = ref.read(firebaseAuthProvider);
-      await auth.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-      );
-      if (mounted) {
-        context.go('/dashboard');
-      }
-    } on FirebaseAuthException catch (e) {
-      setState(() {
-        _errorMessage = _getFirebaseErrorMessage(e.code);
-        _isLoading = false;
-      });
-    } on Exception catch (e) {
-      setState(() {
-        _errorMessage =
-            e.toString().replaceFirst('Exception: ', '').split('\n').first;
-        if (_errorMessage!.isEmpty) _errorMessage = 'E-mail ou senha inválidos.';
-        _isLoading = false;
-      });
-    }
-  }
 
   Future<void> _signInWithGoogle() async {
     if (!kIsWeb) return;
@@ -98,7 +37,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           if (e.code == 'operation-not-allowed') {
             msg = 'Login com Google não está ativo. No Firebase: Authentication → Sign-in method → Google.';
           } else if (e.code == 'account-exists-with-different-credential') {
-            msg = 'Este e-mail já está cadastrado com outro método. Use e-mail e senha.';
+            msg = 'Este e-mail já existe com outro provedor no Firebase; use apenas Google.';
           } else if (e.message != null && e.message!.isNotEmpty) {
             msg = e.message!;
           }
@@ -116,56 +55,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
-  Future<void> _sendPasswordReset(String email) async {
-    final trimmed = email.trim();
-    if (trimmed.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Informe seu e-mail para redefinir a senha.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-    try {
-      final auth = ref.read(firebaseAuthProvider);
-      await auth.sendPasswordResetEmail(email: trimmed);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('E-mail enviado! Verifique sua caixa de entrada para redefinir a senha.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        String msg = 'Não foi possível enviar o e-mail. Tente novamente.';
-        if (e.code == 'user-not-found') msg = 'Nenhuma conta encontrada com este e-mail.';
-        if (e.code == 'invalid-email') msg = 'E-mail inválido.';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg), backgroundColor: Colors.red),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro: $e'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  void _showForgotPasswordDialog() {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => _ForgotPasswordDialog(
-        initialEmail: _emailController.text.trim(),
-        onSend: _sendPasswordReset,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -173,22 +62,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     const bg = Color(0xFF121212);
     const cardBg = Color(0xFF1E1E1E);
     const border = Color(0xFF2C2C2C);
-    const fieldFill = Color(0xFF2A2A2A);
-
-    final fieldDecoration = InputDecoration(
-      labelStyle: GoogleFonts.poppins(color: Colors.white60),
-      hintStyle: GoogleFonts.poppins(color: Colors.white38),
-      floatingLabelStyle: GoogleFonts.poppins(color: purple600),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: border)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: border),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: purple600, width: 2),
-      ),
-    );
 
     return Scaffold(
       backgroundColor: bg,
@@ -259,6 +132,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        if (!kIsWeb) ...[
+                          Text(
+                            'O painel usa login com Google no navegador (versão web).',
+                            style: GoogleFonts.poppins(fontSize: 14, color: Colors.white70),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                        ],
                         if (_errorMessage != null) ...[
                           Container(
                             padding: const EdgeInsets.all(14),
@@ -287,111 +168,25 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           ),
                           const SizedBox(height: 20),
                         ],
-                        TextField(
-                          controller: _emailController,
-                          style: GoogleFonts.poppins(color: Colors.white),
-                          decoration: fieldDecoration.copyWith(
-                            labelText: 'E-mail',
-                            hintText: 'seu@email.com',
-                            fillColor: fieldFill,
-                            filled: true,
-                            prefixIcon: Icon(Icons.email_outlined, color: purple600.withValues(alpha: 0.95)),
-                          ),
-                          keyboardType: TextInputType.emailAddress,
-                          textInputAction: TextInputAction.next,
-                          enabled: !_isLoading,
-                        ),
-                        const SizedBox(height: 20),
-                        TextField(
-                          controller: _passwordController,
-                          style: GoogleFonts.poppins(color: Colors.white),
-                          decoration: fieldDecoration.copyWith(
-                            labelText: 'Senha',
-                            hintText: '••••••',
-                            fillColor: fieldFill,
-                            filled: true,
-                            prefixIcon: Icon(Icons.lock_outline, color: purple600.withValues(alpha: 0.95)),
-                          ),
-                          obscureText: true,
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _signInWithEmail(),
-                          enabled: !_isLoading,
-                        ),
-                        const SizedBox(height: 16),
-                        Center(
-                          child: TextButton(
-                            onPressed: _isLoading ? null : _showForgotPasswordDialog,
+                        FilledButton.icon(
+                          onPressed: _isLoading || !kIsWeb ? null : _signInWithGoogle,
+                          icon: Icon(Icons.g_mobiledata_rounded, size: 28, color: Colors.white),
+                          label: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
                             child: Text(
-                              'Esqueci minha senha',
+                              kIsWeb
+                                  ? (_isLoading ? 'Abrindo…' : 'Continuar com Google')
+                                  : 'Use a versão web',
                               style: GoogleFonts.poppins(
-                                color: purple600,
-                                fontWeight: FontWeight.w500,
-                                fontSize: 14,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        FilledButton(
-                          onPressed: _isLoading ? null : _signInWithEmail,
                           style: FilledButton.styleFrom(
                             backgroundColor: purple600,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  height: 22,
-                                  width: 22,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                )
-                              : Text(
-                                  'Entrar',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                        ),
-                        const SizedBox(height: 20),
-                        Row(
-                          children: [
-                            const Expanded(child: Divider(color: border)),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              child: Text(
-                                'ou',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 13,
-                                  color: Colors.white38,
-                                ),
-                              ),
-                            ),
-                            const Expanded(child: Divider(color: border)),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        OutlinedButton.icon(
-                          onPressed: _isLoading || !kIsWeb ? null : _signInWithGoogle,
-                          icon: Icon(Icons.g_mobiledata_rounded, size: 28, color: purple600),
-                          label: Text(
-                            'Continuar com Google',
-                            style: GoogleFonts.poppins(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            side: const BorderSide(color: border),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
                         ),
                       ],
@@ -403,7 +198,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   child: TextButton(
                     onPressed: () => context.go('/register'),
                     child: Text(
-                      'Ainda não tem conta? Cadastre-se',
+                      'Primeira vez? Crie a conta',
                       style: GoogleFonts.poppins(
                         color: const Color(0xFFFFB74D),
                         fontWeight: FontWeight.w500,
@@ -416,95 +211,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _ForgotPasswordDialog extends StatefulWidget {
-  const _ForgotPasswordDialog({
-    required this.initialEmail,
-    required this.onSend,
-  });
-
-  final String initialEmail;
-  final void Function(String email) onSend;
-
-  @override
-  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
-}
-
-class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
-  late final TextEditingController _emailController;
-
-  @override
-  void initState() {
-    super.initState();
-    _emailController = TextEditingController(text: widget.initialEmail);
-  }
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    Navigator.of(context).pop();
-    widget.onSend(_emailController.text);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(
-        'Esqueci minha senha',
-        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Informe o e-mail da sua conta. Enviaremos um link para você redefinir a senha.',
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              color: const Color(0xFF5C636A),
-            ),
-          ),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _emailController,
-            decoration: const InputDecoration(
-              labelText: 'E-mail',
-              hintText: 'seu@email.com',
-              prefixIcon: Icon(Icons.email_outlined),
-            ),
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _submit(),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(
-            'Cancelar',
-            style: GoogleFonts.poppins(color: const Color(0xFF5C636A)),
-          ),
-        ),
-        FilledButton(
-          onPressed: _submit,
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF9333EA),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-          child: Text(
-            'Enviar link',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
-          ),
-        ),
-      ],
     );
   }
 }

@@ -22,12 +22,16 @@ class AppointmentServiceItem {
   };
 
   static AppointmentServiceItem? fromMap(dynamic e) {
-    if (e is! Map<String, dynamic>) return null;
-    final id = e['serviceId'] as String?;
-    final name = e['serviceName'] as String?;
+    if (e == null || e is! Map) return null;
+    final row = Map<String, dynamic>.from(e);
+    final id = row['serviceId'] as String?;
+    final name = row['serviceName'] as String?;
     if (id == null || name == null) return null;
-    final price = (e['price'] as num?)?.toDouble() ?? 0;
-    final dur = (e['durationMinutes'] as int?) ?? 30;
+    final price = (row['price'] as num?)?.toDouble() ?? 0;
+    final durRaw = row['durationMinutes'];
+    final dur = durRaw is int
+        ? durRaw
+        : (durRaw is num ? durRaw.toInt() : 30);
     return AppointmentServiceItem(serviceId: id, serviceName: name, price: price, durationMinutes: dur);
   }
 }
