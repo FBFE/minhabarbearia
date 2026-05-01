@@ -30,6 +30,7 @@ import '../../../core/providers/fcm_provider.dart';
 import '../../../core/providers/firebase_providers.dart';
 import '../../../core/utils/color_utils.dart';
 import '../../../core/utils/image_utils.dart';
+import '../../../core/utils/platform_admin_client.dart';
 import 'dashboard_dre_tab.dart';
 import 'dashboard_estoque_tab.dart';
 import 'walk_in_checkout_sheet.dart';
@@ -51,9 +52,8 @@ class DashboardPage extends ConsumerWidget {
     final barberShopAsync = ref.watch(barberShopProvider);
     final adminData = ref.watch(adminDashboardProvider);
     final isAdminFromApi = adminData.valueOrNull?.isAdmin ?? false;
-    // Fallback: mostrar botão admin para o e-mail do dono do app mesmo se a API ainda não respondeu
-    const adminEmail = 'fabianoeugenio96@gmail.com';
-    final isAdmin = isAdminFromApi || user?.email == adminEmail;
+    /// API + mesmo critério local que a Cloud Function (e-mail ou UID na lista legada).
+    final isAdmin = isAdminFromApi || isPlatformAdminLocally(user);
 
     final wantOwnerOnboarding = ref.watch(ownerOnboardingRequestProvider);
     final bypassAdminRedirect = wantOwnerOnboarding;
@@ -72,6 +72,16 @@ class DashboardPage extends ConsumerWidget {
           return const OwnerOnboardingPage(initialShop: null);
         }
         if (shop.onboardingScreen < 3) {
+          final platAdmin = isPlatformAdminLocally(user);
+          final allowOwnerFlow = bypassAdminRedirect || !platAdmin;
+          if (!allowOwnerFlow) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) context.go('/admin');
+            });
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
           return OwnerOnboardingPage(initialShop: shop);
         }
         final primary = shop.primaryColorAsColor;
