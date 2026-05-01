@@ -2,23 +2,21 @@
 
 ## Painel Admin (dono do app)
 
-O painel de administração é acessível **apenas** ao seu usuário (fabianoeugenio96@gmail.com, UID `7rNwYcg61hcGgg6IeCRBjSytyBq1`):
+Acesso ao painel **`/admin`** (Cloud Function `getAdminDashboard`), por ordem:
 
-1. **Configuração:** O UID do admin está definido na Cloud Function `getAdminDashboard` (variável `ADMIN_UID` em `functions/index.js`). Não é necessário criar documento no Firestore para um único admin.
+1. **E-mail:** conta em Firebase Auth com e-mail `fabianoeugenio96@gmail.com` (Google).
+2. **Firestore (opcional):** documento `app_config/config`, campo `adminUids` (array de UIDs). Quando existir e tiver entradas, esses UIDs também são admin.
+3. **Fallback no código:** lista `ADMIN_UID_LEGACY` em `functions/index.js` (UIDs legados, incl. conta recriada no Auth).
 
-2. **No app:** Só quem for admin vê o ícone **Painel do app** (escudo) no dashboard. Outros usuários logados não veem esse botão.
+Para recriar conta e manter admin sem alterar código, basta usar o **mesmo Google** com esse e-mail — ou acrescente o novo UID em `adminUids` no Firestore / em `ADMIN_UID_LEGACY` no código.
 
-3. **Acessar o painel:** Com o usuário admin logado, clique no ícone de escudo no AppBar do dashboard, ou acesse `/admin`. Você verá a lista de barbearias (nome, slug, trial, assinatura).
+**No app:** o dashboard também trata `fabianoeugenio96@gmail.com` como admin no cliente (ícone escudo), além da API.
 
-4. **Vários admins (opcional):** Para mais de um admin, crie no Firestore:
-   - Coleção: `app_config`, documento: `config`
-   - Campo: `adminUids` (array de strings) com os UIDs dos admins.
-   - Se esse documento existir, a lista dele é usada; senão vale só o `ADMIN_UID` do código.
+**Deploy** após alterar `functions/index.js`:
 
-5. **Deploy da Cloud Function:**
-   ```bash
-   firebase deploy --only functions
-   ```
+```bash
+firebase deploy --only functions
+```
 
 ---
 

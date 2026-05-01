@@ -34,10 +34,15 @@ const authAdmin = getAuth();
  * Quem pode abrir o painel admin (lista de negócios, etc.).
  * 1) Se o e-mail do token for o dono do produto (recomendado após recriar conta no Auth).
  * 2) Senão, se existir `adminUids` em app_config/config — inclui esse UID.
- * 3) Senão, fallback para o UID antigo (compatibilidade).
+ * 3) Senão, fallback para UIDs legados em ADMIN_UID_LEGACY (conta recriada no Auth).
  */
+/** E-mails com acesso ao painel admin quando o Auth devolve esse e-mail na conta (Google). */
 const ADMIN_OWNER_EMAIL = 'fabianoeugenio96@gmail.com';
-const ADMIN_UID_LEGACY = '7rNwYcg61hcGgg6IeCRBjSytyBq1';
+/** UIDs legados quando não há lista em Firestore — inclui conta recriada no Auth. */
+const ADMIN_UID_LEGACY = [
+  '7rNwYcg61hcGgg6IeCRBjSytyBq1',
+  'JWiiOV3Q6aZ5vSQSJCybNFmP92H2',
+];
 
 async function isPlatformAdmin(uid) {
   let userRecord = null;
@@ -55,7 +60,7 @@ async function isPlatformAdmin(uid) {
   if (Array.isArray(adminUids) && adminUids.length > 0) {
     return adminUids.includes(uid);
   }
-  return uid === ADMIN_UID_LEGACY;
+  return ADMIN_UID_LEGACY.includes(uid);
 }
 
 function formatDateTime(date) {
