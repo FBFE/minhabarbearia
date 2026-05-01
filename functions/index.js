@@ -5,6 +5,9 @@
  * - clientRespondToAppointmentProposal: cliente aceita/recusa horário sugerido (HTTPS callable).
  * - onBarberProductCreated / onBarberProductUpdated: estoque ≤ mínimo; uso no studio ≤15%.
  * - sendAppointmentReminders: a cada 5 min — lembrete ~30 min antes (status pending ou confirmed).
+ * - refundCurrentPeriodSubscription: reembolso por arrependimento (7 dias corridos após o pagamento
+ *   da fatura atual; bloqueia após subscriptionRefundEverUsed; past_due sem reembolso aqui).
+ * - cancelSubscriptionAtPeriodEnd: após a janela de 7 dias — cancela só a próxima renovação.
  * - createCheckoutSession, syncSubscriptionFromCheckout: Stripe Checkout (us-central1).
  * - stripeWebhook: HTTP; raw body; secrets STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET.
  *
@@ -662,6 +665,168 @@ export const clientRespondToAppointmentProposal = onCall(
   }
 );
 
+function shopHasProAccessData(d, nowMs) {
+  const ss = (d.subscriptionStatus || 'trial').toString();
+  if (ss === 'refunded') return false;
+  if (ss === 'past_due') return true;
+  if (ss === 'trial') {
+    const t = d.trialEndsAt?.toDate?.();
+    if (!t) return true;
+    return t.getTime() > nowMs;
+  }
+  if (ss === 'active') {
+    if (d.cancelAtPeriodEnd && d.subscriptionCurrentPeriodEnd) {
+      return d.subscriptionCurrentPeriodEnd.toDate().getTime() > nowMs;
+    }
+    return true;
+  }
+  if (ss === 'canceled') {
+    const end = d.subscriptionCurrentPeriodEnd?.toDate?.();
+    return end ? end.getTime() > nowMs : false;
+  }
+  if (ss === 'none') return false;
+  return false;
+}
+
+/** E-mails típicos de teste / descartável — não entram na contagem «produção» do dashboard. */
+function looksLikeFirebaseTestEmail(email) {
+  const e = (email || '').trim().toLowerCase();
+  if (!e) return false;
+  if (/^[^@]+@example\./i.test(e)) return true;
+  if (/@test\.com$/i.test(e) || /@localhost$/i.test(e) || /@invalid$/i.test(e)) return true;
+  if (/mailinator|yopmail|guerrillamail|discard\.email|sharklasers/i.test(e)) return true;
+  if (/\+\s*test\+|\+e2e\+|\.e2e\.|^e2etest@/i.test(e)) return true;
+  return false;
+}
+
+/**
+ * Agrega métricas para o painel admin (uma leitura por negócio em billingEvents/clients).
+ */
+async function buildAdminDashboardSummary(shopsSnap) {
+  const nowMs = Date.now();
+  let totalBusinesses = 0;
+  let businessesWithProAccess = 0;
+  let subscriptionActiveCount = 0;
+  let activeStripeBackedCount = 0;
+  let onTrialCount = 0;
+  let refundedCount = 0;
+  let pastDueCount = 0;
+  let registeredEndClientsTotal = 0;
+  let totalSubscriptionRevenueCents = 0;
+  const refundActivity = [];
+
+  for (const doc of shopsSnap.docs) {
+    totalBusinesses++;
+    const d = doc.data();
+    const slug = doc.id;
+    const name = (d.name || '').toString() || slug;
+
+    if (shopHasProAccessData(d, nowMs)) {
+      businessesWithProAccess++;
+    }
+
+    const ss = (d.subscriptionStatus || 'trial').toString();
+    if (ss === 'active') {
+      subscriptionActiveCount++;
+      if (d.stripeSubscriptionId && String(d.stripeSubscriptionId).startsWith('sub_')) {
+        activeStripeBackedCount++;
+      }
+    }
+    if (ss === 'trial') onTrialCount++;
+    if (ss === 'refunded') refundedCount++;
+    if (ss === 'past_due') pastDueCount++;
+
+    const clientsCol = firestore.collection('barbershops').doc(slug).collection('clients');
+    try {
+      const cntSnap = await clientsCol.count().get();
+      registeredEndClientsTotal += cntSnap.data().count;
+    } catch (e) {
+      try {
+        const snap = await clientsCol.limit(10000).get();
+        registeredEndClientsTotal += snap.size;
+      } catch (e2) {
+        console.warn('count clients', slug, e2?.message || e2);
+      }
+    }
+
+    try {
+      const paySnap = await firestore
+        .collection('barbershops')
+        .doc(slug)
+        .collection('billingEvents')
+        .where('type', '==', 'payment')
+        .get();
+      for (const ev of paySnap.docs) {
+        const amt = ev.data()?.amount;
+        if (typeof amt === 'number' && amt > 0) {
+          totalSubscriptionRevenueCents += amt;
+        }
+      }
+
+      const refSnap = await firestore
+        .collection('barbershops')
+        .doc(slug)
+        .collection('billingEvents')
+        .where('type', '==', 'refund')
+        .get();
+      let refundCount = 0;
+      let lastMs = 0;
+      for (const ev of refSnap.docs) {
+        refundCount++;
+        const ca = ev.data()?.createdAt?.toDate?.();
+        const t = ca ? ca.getTime() : 0;
+        if (t > lastMs) lastMs = t;
+      }
+      if (refundCount > 0) {
+        refundActivity.push({
+          slug,
+          name,
+          refundCount,
+          lastRefundAt: lastMs ? new Date(lastMs).toISOString() : null,
+        });
+      }
+    } catch (e) {
+      console.warn('billingEvents', slug, e?.message || e);
+    }
+  }
+
+  refundActivity.sort((a, b) => b.refundCount - a.refundCount);
+
+  let firebaseAuthUserCount = 0;
+  let firebaseAuthUserCountProduction = 0;
+  try {
+    let nextPageToken = undefined;
+    do {
+      const listResult = await authAdmin.listUsers(1000, nextPageToken);
+      firebaseAuthUserCount += listResult.users.length;
+      for (const u of listResult.users) {
+        if (!looksLikeFirebaseTestEmail(u.email)) {
+          firebaseAuthUserCountProduction++;
+        }
+      }
+      nextPageToken = listResult.pageToken;
+    } while (nextPageToken);
+  } catch (e) {
+    console.warn('listUsers admin summary', e?.message || e);
+  }
+
+  return {
+    totalBusinesses,
+    businessesWithProAccess,
+    subscriptionActiveCount,
+    activeStripeBackedCount,
+    onTrialCount,
+    refundedCount,
+    pastDueCount,
+    registeredEndClientsTotal,
+    firebaseAuthUserCount,
+    firebaseAuthUserCountProduction,
+    totalSubscriptionRevenueCents,
+    currency: 'brl',
+    refundActivity,
+  };
+}
+
 /**
  * Painel admin: dono por e-mail (Firebase Auth) ou UID em app_config/config.adminUids.
  */
@@ -697,7 +862,8 @@ export const getAdminDashboard = onCall(
         const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
         return tb - ta;
       });
-    return { isAdmin: true, barberShops };
+    const summary = await buildAdminDashboardSummary(shopsSnap);
+    return { isAdmin: true, barberShops, summary };
   }
 );
 
@@ -781,8 +947,24 @@ export const cancelSubscriptionAtPeriodEnd = onCall(
   }
 );
 
+/** Prazo de arrependimento (7 dias corridos após o pagamento que abriu o período). */
+const REMORSE_REFUND_MS = 7 * 24 * 60 * 60 * 1000;
+
+function millisFromStripeInvoicePaidAt(inv) {
+  const pst = inv?.status_transitions?.paid_at;
+  if (typeof pst === 'number' && pst > 0) {
+    return pst * 1000;
+  }
+  const c = inv?.created;
+  if (typeof c === 'number' && c > 0) {
+    return c * 1000;
+  }
+  return null;
+}
+
 /**
- * Reembolsa só a fatura paga do período atual (última paga) e revoga acesso.
+ * Reembolsa só a fatura paga do período atual (última paga), revoga acesso na hora
+ * e aplica política «Corte por arrependimento» (7 dias; trava após primeiro reembolso).
  */
 export const refundCurrentPeriodSubscription = onCall(
   { region: 'us-central1', secrets: [stripeSecretKey] },
@@ -796,20 +978,49 @@ export const refundCurrentPeriodSubscription = onCall(
     }
     const shop = await firestore.collection('barbershops').doc(slug).get();
     if (!shop.exists) throw new HttpsError('not-found', 'Negócio não encontrado.');
-    if (shop.data().ownerUid !== request.auth.uid) {
+    const sd = shop.data();
+    if (sd.ownerUid !== request.auth.uid) {
       throw new HttpsError('permission-denied', 'Apenas o dono.');
     }
-    const subId = shop.data().stripeSubscriptionId;
+    if (sd.subscriptionRefundEverUsed === true) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Este negócio já usou reembolso pela assinatura antes. Você só pode cancelar a renovação até o fim do período pago (sem estorno automático).'
+      );
+    }
+    if (sd.subscriptionStatus === 'past_due') {
+      throw new HttpsError(
+        'failed-precondition',
+        'Com assinatura em atraso, use o portal de pagamento ou fale com suporte; reembolso por arrependimento não está disponível neste estado.'
+      );
+    }
+    const subId = sd.stripeSubscriptionId;
     if (!subId) {
       throw new HttpsError('failed-precondition', 'Sem assinatura ativa para reembolsar.');
     }
     const stripe = new Stripe(stripeSecretKey.value());
-    const sub = await stripe.subscriptions.retrieve(subId);
+    await stripe.subscriptions.retrieve(subId);
     const inv = await stripe.invoices.list({ subscription: subId, status: 'paid', limit: 1 });
     if (!inv.data.length) {
       throw new HttpsError('failed-precondition', 'Nenhuma fatura paga encontrada.');
     }
     const lastInv = inv.data[0];
+    if (!(typeof lastInv.amount_paid === 'number') || lastInv.amount_paid <= 0) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Não há cobrança paga neste período para estornar (ex.: período apenas em trial gratuito sem fatura em dinheiro).'
+      );
+    }
+    const paidMs = millisFromStripeInvoicePaidAt(lastInv);
+    if (paidMs == null) {
+      throw new HttpsError('failed-precondition', 'Não foi possível determinar a data do pagamento da fatura.');
+    }
+    if (Date.now() - paidMs >= REMORSE_REFUND_MS) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Passaram 7 dias corridos desde o pagamento deste período. O reembolso automático por arrependimento não está mais disponível. Use «Cancelar renovação» para não ser cobrado no próximo ciclo; o acesso Pro continua até o fim do período já pago (~30 dias de ciclo, conforme Stripe).'
+      );
+    }
     const chargeId = lastInv.charge
       ? typeof lastInv.charge === 'string'
         ? lastInv.charge
@@ -834,6 +1045,7 @@ export const refundCurrentPeriodSubscription = onCall(
           cancelAtPeriodEnd: false,
           subscriptionCurrentPeriodEnd: null,
           stripeSubscriptionId: null,
+          subscriptionRefundEverUsed: true,
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
@@ -1064,6 +1276,15 @@ app.post(
             const sub = await stripe.subscriptions.retrieve(subId);
             await writeSubscriptionToFirestoreFromStripeObject(slug, sub);
             if (inv.amount_paid > 0) {
+              const paidSec = inv.status_transitions?.paid_at ?? inv.created;
+              if (typeof paidSec === 'number' && paidSec > 0) {
+                await firestore.collection('barbershops').doc(slug).set(
+                  {
+                    subscriptionLastInvoicePaidAt: Timestamp.fromMillis(paidSec * 1000),
+                  },
+                  { merge: true }
+                );
+              }
               let discountCents = 0;
               if (Array.isArray(inv.total_discount_amounts) && inv.total_discount_amounts.length) {
                 discountCents = inv.total_discount_amounts.reduce((s, x) => s + (x?.amount || 0), 0);

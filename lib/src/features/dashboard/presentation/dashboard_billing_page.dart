@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/providers/barber_shop_providers.dart';
 import '../../../core/subscription_access.dart';
+import '../../../core/subscription_remorse.dart';
 const _kFunctionsRegion = 'us-central1';
 FirebaseFunctions _ff() => FirebaseFunctions.instanceFor(
       app: Firebase.app(),
@@ -108,6 +109,16 @@ class _DashboardBillingPageState extends ConsumerState<DashboardBillingPage> {
           final endStr = end != null
               ? DateFormat('dd/MM/yyyy, HH:mm').format(end)
               : '—';
+          final paidAt = shop.subscriptionLastInvoicePaidAt;
+          final paidAtStr = paidAt != null
+              ? DateFormat('dd/MM/yyyy, HH:mm').format(paidAt)
+              : '—';
+          final remorseEnds = shop.remorseRefundPeriodEnd;
+          final remorseEndsStr = remorseEnds != null
+              ? DateFormat('dd/MM/yyyy, HH:mm').format(remorseEnds)
+              : '—';
+          final showRefundBtn = shop.mayShowAutomaticRefundButton(hasProAccess: hasAccess);
+          final showCancelRenewBtn = shop.mayCancelRenewalInsteadOfRefund(hasProAccess: hasAccess);
           final eventsAsync = ref.watch(billingEventsProvider(shop.slug));
 
           return ListView(
@@ -135,10 +146,58 @@ class _DashboardBillingPageState extends ConsumerState<DashboardBillingPage> {
                     height: 1.35,
                   ),
                 ),
-              const SizedBox(height: 8),
-              Text(
-                'Sem reembolso: você usa até o fim. Com reembolso, o acesso Pro é encerrado após a devolução do período corrente.',
-                style: GoogleFonts.poppins(fontSize: 12, color: designMuted, height: 1.3),
+              if (paidAt != null && shop.subscriptionStatus == 'active' && shop.stripeSubscriptionId != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Último pagamento registado neste período: $paidAtStr. '
+                  'Estorno por arrependimento disponível até: $remorseEndsStr.',
+                  style: GoogleFonts.poppins(fontSize: 12, color: designMuted, height: 1.35),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.gavel_outlined, color: Colors.indigo.shade700, size: 22),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Corte por arrependimento e trial de cadastro',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: designGray900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      '• Trial de cadastro (7 dias): ao criares o negócio, ganhas período gratuito para '
+                      'testar o sistema — sem cobrança. Isso não é pagamento Stripe.\n\n'
+                      '• Após pagares no Stripe — durante 7 dias corridos desde essa cobrança: aparece '
+                      '«solicitar reembolso»; ao confirmares, o estorno é feito na Stripe e o acesso Pro '
+                      'é bloqueado de imediato (não ficas no restante do período já pago).\n\n'
+                      '• Depois desses 7 dias e até ao fim do ciclo atual (cerca de ~30 dias desde o Stripe): '
+                      'só aparece «cancelar renovação» — o Pro continua ativo até ${end != null ? endStr : 'a data de fim do período pago'}, '
+                      'sem cobrança do mês seguinte.\n\n'
+                      '• Trava de reincidência: se este negócio já usou reembolso automático antes, mesmo '
+                      'voltando a assinar, não há segundo reembolso automático no app — apenas cancelamento da renovação.',
+                      style: GoogleFonts.poppins(fontSize: 12.5, color: designMuted, height: 1.45),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 16),
               if (shop.stripeSubscriptionId != null && shop.subscriptionStatus == 'refunded') ...[
@@ -151,7 +210,38 @@ class _DashboardBillingPageState extends ConsumerState<DashboardBillingPage> {
                 ),
                 const SizedBox(height: 12),
               ],
-              if (shop.stripeSubscriptionId != null && shop.subscriptionStatus == 'active' && !shop.cancelAtPeriodEnd) ...[
+              if (shop.explainsWhyRefundHiddenOnlyCancel) ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Os 7 dias contados desde o pagamento atual já passaram neste ciclo — '
+                    'o estorno pela app não está disponível. Usa cancelar renovação para '
+                    'não ser cobrado no período seguinte e manter Pro até ao fim do ciclo atual.',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12.5,
+                      color: const Color(0xFF475569),
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+              if (shop.isBlockedFromAutomaticRefund &&
+                  showCancelRenewBtn &&
+                  shop.subscriptionStatus == 'active') ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(
+                    'Este negócio já utilizou reembolso automático no passado. '
+                    'Podes apenas cancelar a renovação; não há novo reembolso automático por novas assinaturas.',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12.5,
+                      color: const Color(0xFF92400E),
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+              if (showCancelRenewBtn) ...[
                 FilledButton.icon(
                   onPressed: _loading
                       ? null
@@ -160,9 +250,9 @@ class _DashboardBillingPageState extends ConsumerState<DashboardBillingPage> {
                               context: context,
                               builder: (ctx) => AlertDialog(
                                 title: const Text('Cancelar renovação?'),
-                                content: const Text(
-                                  'A assinatura deixa de renovar após o fim do período. '
-                                  'Pode usar até a data exibida acima.',
+                                content: Text(
+                                  'A assinatura deixa de renovar após o fim do período pago. '
+                                  'Continuas com acesso Pro até ${end != null ? endStr : 'o fim do período indicado no Stripe'}.',
                                 ),
                                 actions: [
                                   TextButton(
@@ -185,13 +275,15 @@ class _DashboardBillingPageState extends ConsumerState<DashboardBillingPage> {
                     padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
                   ),
                   icon: const Icon(Icons.event_busy),
-                  label: const Text('Cancelar renovação (até fim do período)'),
+                  label: Text(
+                    shop.explainsWhyRefundHiddenOnlyCancel
+                        ? 'Cancelar renovação (sem reembolso — após 7 dias do pagamento)'
+                        : 'Cancelar renovação (até fim do período)',
+                  ),
                 ),
                 const SizedBox(height: 10),
               ],
-              if (shop.stripeSubscriptionId != null &&
-                  shop.subscriptionStatus != 'refunded' &&
-                  hasAccess) ...[
+              if (showRefundBtn)
                 OutlinedButton.icon(
                   onPressed: _loading
                       ? null
@@ -199,10 +291,12 @@ class _DashboardBillingPageState extends ConsumerState<DashboardBillingPage> {
                             final ok = await showDialog<bool>(
                               context: context,
                               builder: (ctx) => AlertDialog(
-                                title: const Text('Reembolso do período atual'),
-                                content: const Text(
-                                  'A fatura do período atual será reembolsada, o acesso Pro será '
-                                  'encerrado e a assinatura cancelada. Confirma?',
+                                title: const Text('Reembolso por arrependimento'),
+                                content: Text(
+                                  'Dentro dos 7 dias corridos desde o pagamento atual. Ao confirmares, '
+                                  'o valor desta fatura será estornado na Stripe, a assinatura será '
+                                  'cancelada e o acesso Pro será bloqueado de imediato (não ficas com o resto do período). '
+                                  'Confirma?',
                                 ),
                                 actions: [
                                   TextButton(
@@ -221,10 +315,9 @@ class _DashboardBillingPageState extends ConsumerState<DashboardBillingPage> {
                             }
                           },
                   icon: const Icon(Icons.money_off),
-                  label: const Text('Solicitar reembolso (perde acesso Pro)'),
+                  label: const Text('Solicitar reembolso (arrependimento — perde Pro na hora)'),
                 ),
-                const SizedBox(height: 20),
-              ],
+              if (showRefundBtn) const SizedBox(height: 20),
               if ((shop.stripeCustomerId == null && shop.stripeSubscriptionId == null) ||
                   shop.subscriptionStatus == 'none')
                 FilledButton(

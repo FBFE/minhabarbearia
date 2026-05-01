@@ -163,7 +163,7 @@ class DashboardSettingsPage extends ConsumerWidget {
                   ),
                 ),
                 subtitle: Text(
-                  'Renovação, cancelar, reembolso e faturas',
+                  'Trial de cadastro, reembolso por arrependimento (7 dias) e renovação',
                   style: GoogleFonts.poppins(fontSize: 13, color: _designGray600),
                 ),
                 trailing: const Icon(Icons.chevron_right),

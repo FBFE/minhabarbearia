@@ -40,6 +40,10 @@ class BarberShop {
   final String? stripeCustomerId;
   /// ID da assinatura no Stripe (se assinatura recorrente).
   final String? stripeSubscriptionId;
+  /// Data/hora do último pagamento com valor > 0 (fatura paga; usado na janela de 7 dias para reembolso).
+  final DateTime? subscriptionLastInvoicePaidAt;
+  /// `true` após o dono usar reembolso pela assinatura — próximas compras só permitem cancelar renovação, sem reembolso automático.
+  final bool subscriptionRefundEverUsed;
   /// Pontos necessários para gerar 1 voucher de fidelidade (padrão 100).
   final int loyaltyPointsRequired;
   /// Tipo do desconto do voucher: 'percent' ou 'fixed'.
@@ -87,6 +91,8 @@ class BarberShop {
     this.cancelAtPeriodEnd = false,
     this.stripeCustomerId,
     this.stripeSubscriptionId,
+    this.subscriptionLastInvoicePaidAt,
+    this.subscriptionRefundEverUsed = false,
     this.loyaltyPointsRequired = 100,
     this.voucherDiscountType = 'fixed',
     this.voucherDiscountValue = 10,
@@ -165,6 +171,9 @@ class BarberShop {
       cancelAtPeriodEnd: data['cancelAtPeriodEnd'] as bool? ?? false,
       stripeCustomerId: data['stripeCustomerId'] as String?,
       stripeSubscriptionId: data['stripeSubscriptionId'] as String?,
+      subscriptionLastInvoicePaidAt:
+          (data['subscriptionLastInvoicePaidAt'] as Timestamp?)?.toDate(),
+      subscriptionRefundEverUsed: data['subscriptionRefundEverUsed'] as bool? ?? false,
       loyaltyPointsRequired: data['loyaltyPointsRequired'] as int? ?? 100,
       voucherDiscountType: data['voucherDiscountType'] as String? ?? 'fixed',
       voucherDiscountValue: (data['voucherDiscountValue'] as num?)?.toDouble() ?? 10,
@@ -255,6 +264,8 @@ class BarberShop {
     bool? cancelAtPeriodEnd,
     String? stripeCustomerId,
     String? stripeSubscriptionId,
+    DateTime? subscriptionLastInvoicePaidAt,
+    bool? subscriptionRefundEverUsed,
     int? loyaltyPointsRequired,
     String? voucherDiscountType,
     double? voucherDiscountValue,
@@ -290,6 +301,8 @@ class BarberShop {
       cancelAtPeriodEnd: cancelAtPeriodEnd ?? this.cancelAtPeriodEnd,
       stripeCustomerId: stripeCustomerId ?? this.stripeCustomerId,
       stripeSubscriptionId: stripeSubscriptionId ?? this.stripeSubscriptionId,
+      subscriptionLastInvoicePaidAt: subscriptionLastInvoicePaidAt ?? this.subscriptionLastInvoicePaidAt,
+      subscriptionRefundEverUsed: subscriptionRefundEverUsed ?? this.subscriptionRefundEverUsed,
       loyaltyPointsRequired: loyaltyPointsRequired ?? this.loyaltyPointsRequired,
       voucherDiscountType: voucherDiscountType ?? this.voucherDiscountType,
       voucherDiscountValue: voucherDiscountValue ?? this.voucherDiscountValue,

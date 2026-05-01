@@ -7,15 +7,111 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
+/// Uma linha de atividade de reembolso por negócio (contagem na subcoleção billingEvents).
+class AdminRefundRow {
+  const AdminRefundRow({
+    required this.slug,
+    required this.name,
+    required this.refundCount,
+    this.lastRefundAt,
+  });
+  final String slug;
+  final String name;
+  final int refundCount;
+  final String? lastRefundAt;
+
+  static AdminRefundRow fromMap(Map<String, dynamic> map) {
+    return AdminRefundRow(
+      slug: map['slug'] as String? ?? '',
+      name: map['name'] as String? ?? '',
+      refundCount: _parseIntSafe(map['refundCount']),
+      lastRefundAt: map['lastRefundAt'] as String?,
+    );
+  }
+}
+
+/// Métricas agregadas vindas da Cloud Function (Firestore + Auth).
+class AdminSummary {
+  const AdminSummary({
+    required this.totalBusinesses,
+    required this.businessesWithProAccess,
+    required this.subscriptionActiveCount,
+    required this.activeStripeBackedCount,
+    required this.onTrialCount,
+    required this.refundedCount,
+    required this.pastDueCount,
+    required this.registeredEndClientsTotal,
+    required this.firebaseAuthUserCount,
+    required this.firebaseAuthUserCountProduction,
+    required this.totalSubscriptionRevenueCents,
+    this.currency = 'brl',
+    this.refundActivity = const [],
+  });
+  final int totalBusinesses;
+  final int businessesWithProAccess;
+  final int subscriptionActiveCount;
+  final int activeStripeBackedCount;
+  final int onTrialCount;
+  final int refundedCount;
+  final int pastDueCount;
+  final int registeredEndClientsTotal;
+  final int firebaseAuthUserCount;
+  final int firebaseAuthUserCountProduction;
+  final int totalSubscriptionRevenueCents;
+  final String currency;
+  final List<AdminRefundRow> refundActivity;
+
+  static AdminSummary? fromMap(Map<String, dynamic>? map) {
+    if (map == null) return null;
+    final refundList = map['refundActivity'] as List<dynamic>?;
+    final subscriptionActive = _parseIntSafe(map['subscriptionActiveCount']);
+    return AdminSummary(
+      totalBusinesses: _parseIntSafe(map['totalBusinesses']),
+      businessesWithProAccess: _parseIntSafe(map['businessesWithProAccess']),
+      subscriptionActiveCount: subscriptionActive,
+      activeStripeBackedCount: map.containsKey('activeStripeBackedCount')
+          ? _parseIntSafe(map['activeStripeBackedCount'])
+          : subscriptionActive,
+      onTrialCount: _parseIntSafe(map['onTrialCount']),
+      refundedCount: _parseIntSafe(map['refundedCount']),
+      pastDueCount: _parseIntSafe(map['pastDueCount']),
+      registeredEndClientsTotal: _parseIntSafe(map['registeredEndClientsTotal']),
+      firebaseAuthUserCount: _parseIntSafe(map['firebaseAuthUserCount']),
+      firebaseAuthUserCountProduction: map.containsKey('firebaseAuthUserCountProduction')
+          ? _parseIntSafe(map['firebaseAuthUserCountProduction'])
+          : _parseIntSafe(map['firebaseAuthUserCount']),
+      totalSubscriptionRevenueCents: _parseIntSafe(map['totalSubscriptionRevenueCents']),
+      currency: map['currency'] as String? ?? 'brl',
+      refundActivity: refundList
+              ?.map(
+                (e) => AdminRefundRow.fromMap(
+                  Map<String, dynamic>.from(e as Map),
+                ),
+              )
+              .toList() ??
+          [],
+    );
+  }
+}
+
+int _parseIntSafe(dynamic v, [int fallback = 0]) {
+  if (v == null) return fallback;
+  if (v is int) return v;
+  if (v is num) return v.round();
+  return int.tryParse(v.toString()) ?? fallback;
+}
+
 /// Dados do painel de administração: isAdmin e lista de barbearias (só preenchido se isAdmin).
 class AdminDashboardData {
   const AdminDashboardData({
     required this.isAdmin,
     this.barberShops = const [],
+    this.summary,
     this.error,
   });
   final bool isAdmin;
   final List<AdminBarberShopItem> barberShops;
+  final AdminSummary? summary;
   final String? error;
 }
 
@@ -140,7 +236,16 @@ AdminDashboardData _parseAdminDashboardData(Map<String, dynamic> data) {
   final isAdmin = data['isAdmin'] as bool? ?? false;
   final list = data['barberShops'] as List<dynamic>?;
   final barberShops = list
-      ?.map((e) => AdminBarberShopItem.fromMap(Map<String, dynamic>.from(e as Map)))
-      .toList() ?? [];
-  return AdminDashboardData(isAdmin: isAdmin, barberShops: barberShops);
+          ?.map((e) => AdminBarberShopItem.fromMap(Map<String, dynamic>.from(e as Map)))
+          .toList() ??
+      [];
+  final summaryRaw = data['summary'];
+  final summary = summaryRaw is Map<String, dynamic>
+      ? AdminSummary.fromMap(summaryRaw)
+      : null;
+  return AdminDashboardData(
+    isAdmin: isAdmin,
+    barberShops: barberShops,
+    summary: summary,
+  );
 }

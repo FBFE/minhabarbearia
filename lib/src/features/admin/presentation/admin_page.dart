@@ -27,7 +27,7 @@ class AdminPage extends ConsumerWidget {
       backgroundColor: designGray50,
       appBar: AppBar(
         title: Text(
-          'Painel do app',
+          'Dashboard administrativo',
           style: GoogleFonts.poppins(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -143,52 +143,241 @@ class AdminPage extends ConsumerWidget {
             );
           }
           final list = data.barberShops;
+          final s = data.summary;
+          final money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(adminDashboardProvider),
             child: ListView(
               padding: const EdgeInsets.all(20),
               children: [
+                if (s == null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Material(
+                      color: const Color(0xFFFFF8E1),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline_rounded, color: Colors.amber.shade800),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Faça deploy da função getAdminDashboard (última versão) para carregar métricas agregadas.',
+                                style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF5C636A)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                if (s != null) ...[
+                  Text(
+                    'Visão geral',
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF1A1D21),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Métricas consolidadas das barbearias e da base de usuários.',
+                    style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF5C636A)),
+                  ),
+                  const SizedBox(height: 14),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final maxW = constraints.maxWidth;
+                      final cross = maxW >= 880
+                          ? 4
+                          : maxW >= 640
+                              ? 3
+                              : 2;
+                      final spacing = 10.0;
+                      final tileW = (maxW - spacing * (cross - 1)) / cross;
+                      return Wrap(
+                        spacing: spacing,
+                        runSpacing: spacing,
+                        children: [
+                          SizedBox(
+                            width: tileW,
+                            child: _KpiCard(
+                              icon: Icons.verified_rounded,
+                              label: 'Com Pro ativo',
+                              value: '${s.businessesWithProAccess}',
+                              subtitle: 'Acesso conforme trial/assinatura',
+                            ),
+                          ),
+                          SizedBox(
+                            width: tileW,
+                            child: _KpiCard(
+                              icon: Icons.account_balance_wallet_outlined,
+                              label: 'Assinatura Stripe (active)',
+                              value: '${s.activeStripeBackedCount}',
+                              subtitle: () {
+                                final gap = s.subscriptionActiveCount - s.activeStripeBackedCount;
+                                if (gap <= 0) {
+                                  return 'Todos os «active» têm subscriptionId sub_*';
+                                }
+                                return '$gap com «active» sem subscriptionId sub_*';
+                              }(),
+                            ),
+                          ),
+                          SizedBox(
+                            width: tileW,
+                            child: _KpiCard(
+                              icon: Icons.people_outline_rounded,
+                              label: 'Clientes finais (app)',
+                              value: '${s.registeredEndClientsTotal}',
+                              subtitle: 'Somatório nas lojas',
+                            ),
+                          ),
+                          SizedBox(
+                            width: tileW,
+                            child: _KpiCard(
+                              icon: Icons.person_search_rounded,
+                              label: 'Contas Firebase Auth',
+                              value: '${s.firebaseAuthUserCountProduction}',
+                              subtitle:
+                                  'Excl.: e-mails @example.*, provedores óbvios de teste '
+                                  '(total brutto ${s.firebaseAuthUserCount})',
+                            ),
+                          ),
+                          SizedBox(
+                            width: tileW,
+                            child: _KpiCard(
+                              icon: Icons.payments_outlined,
+                              label: 'Receita (Stripe)',
+                              value: money.format(s.totalSubscriptionRevenueCents / 100),
+                              subtitle: 'Soma dos eventos type=payment',
+                            ),
+                          ),
+                          SizedBox(
+                            width: tileW,
+                            child: _KpiCard(
+                              icon: Icons.store_mall_directory_outlined,
+                              label: 'Negócios',
+                              value: '${s.totalBusinesses}',
+                              subtitle:
+                                  '${s.activeStripeBackedCount} Stripe • ${s.subscriptionActiveCount} marcados active • '
+                                  '${s.onTrialCount} trial • ${s.refundedCount} reimbursed',
+                            ),
+                          ),
+                          SizedBox(
+                            width: tileW,
+                            child: _KpiCard(
+                              icon: Icons.hourglass_bottom_rounded,
+                              label: 'Em atraso (past_due)',
+                              value: '${s.pastDueCount}',
+                              subtitle: 'Ainda com acesso configurado',
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 28),
+                  Text(
+                    'Reembolsos registrados',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF1A1D21),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Quantidade de eventos tipo reembolso por negócio (billingEvents).',
+                    style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF5C636A)),
+                  ),
+                  const SizedBox(height: 10),
+                  Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    color: Colors.white,
+                    child: s.refundActivity.isEmpty
+                        ? Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Text(
+                              'Nenhum reembolso registrado.',
+                              style: GoogleFonts.poppins(color: const Color(0xFF5C636A)),
+                            ),
+                          )
+                        : SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: DataTable(
+                              headingRowColor:
+                                  WidgetStateProperty.all(const Color(0xFFF3F4F6)),
+                              columns: const [
+                                DataColumn(label: Text('Negócio')),
+                                DataColumn(label: Text('Slug')),
+                                DataColumn(label: Text('Pedidos')),
+                                DataColumn(label: Text('Último')),
+                              ],
+                              rows: [
+                                for (final r in s.refundActivity)
+                                  DataRow(
+                                    cells: [
+                                      DataCell(Text(r.name)),
+                                      DataCell(Text(r.slug)),
+                                      DataCell(Text('${r.refundCount}')),
+                                      DataCell(
+                                        Text(_formatRefundDatePt(r.lastRefundAt)),
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ),
+                  ),
+                  const SizedBox(height: 28),
+                ],
                 Text(
-                  'Clientes do app (${list.length} negócio${list.length == 1 ? '' : 's'})',
+                  'Todos os negócios (${list.length})',
                   style: GoogleFonts.poppins(
-                    fontSize: 18,
+                    fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: const Color(0xFF1A1D21),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 Text(
-                  'Barbearias e salões que estão usando o sistema.',
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    color: const Color(0xFF5C636A),
-                  ),
+                  'Barbearias cadastradas no sistema.',
+                  style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF5C636A)),
                 ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    ref.read(ownerOnboardingRequestProvider.notifier).state = true;
-                    context.go('/dashboard');
-                  },
-                  icon: const Icon(Icons.add_business_outlined),
-                  label: Text(
-                    'Sou dono — cadastrar meu negócio',
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                  ),
-                ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 if (list.isEmpty)
-                  Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(32),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 24),
+                    child: Center(
                       child: Text(
-                        'Nenhum negócio cadastrado ainda.',
+                        'Nenhum negócio cadastrado.',
                         style: GoogleFonts.poppins(color: const Color(0xFF5C636A)),
                       ),
                     ),
                   )
                 else
                   ...list.map((shop) => _ShopTile(shop: shop)),
+                const SizedBox(height: 8),
+                Center(
+                  child: TextButton(
+                    onPressed: () {
+                      ref.read(ownerOnboardingRequestProvider.notifier).state = true;
+                      context.go('/dashboard');
+                    },
+                    child: Text(
+                      'Sou dono e quero cadastrar um negócio (opcional)',
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF6366F1),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           );
@@ -258,6 +447,66 @@ class _ShopTile extends StatelessWidget {
           // Poderia abrir link do negócio ou detalhes
           // context.go('/b/${shop.slug}');
         },
+      ),
+    );
+  }
+}
+
+String _formatRefundDatePt(String? iso) {
+  if (iso == null || iso.isEmpty) return '—';
+  final d = DateTime.tryParse(iso);
+  if (d == null) return '—';
+  return DateFormat('dd/MM/yyyy HH:mm').format(d.toLocal());
+}
+
+class _KpiCard extends StatelessWidget {
+  const _KpiCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.subtitle,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 22, color: const Color(0xFF6366F1)),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF5C636A)),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: GoogleFonts.poppins(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF1A1D21),
+              ),
+            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                subtitle!,
+                style: GoogleFonts.poppins(fontSize: 11, height: 1.35, color: const Color(0xFF8B939E)),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
