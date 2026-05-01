@@ -11,6 +11,7 @@
  * Pré-requisitos: plano Blaze. Deploy: firebase deploy --only functions
  */
 import { initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
@@ -27,6 +28,35 @@ initializeApp();
 
 const firestore = getFirestore();
 const messaging = getMessaging();
+const authAdmin = getAuth();
+
+/**
+ * Quem pode abrir o painel admin (lista de negócios, etc.).
+ * 1) Se o e-mail do token for o dono do produto (recomendado após recriar conta no Auth).
+ * 2) Senão, se existir `adminUids` em app_config/config — inclui esse UID.
+ * 3) Senão, fallback para o UID antigo (compatibilidade).
+ */
+const ADMIN_OWNER_EMAIL = 'fabianoeugenio96@gmail.com';
+const ADMIN_UID_LEGACY = '7rNwYcg61hcGgg6IeCRBjSytyBq1';
+
+async function isPlatformAdmin(uid) {
+  let userRecord = null;
+  try {
+    userRecord = await authAdmin.getUser(uid);
+  } catch (e) {
+    console.warn('isPlatformAdmin getUser', uid, e?.message || e);
+  }
+  const email = userRecord?.email?.trim().toLowerCase();
+  if (email && email === ADMIN_OWNER_EMAIL.toLowerCase()) {
+    return true;
+  }
+  const configSnap = await firestore.collection('app_config').doc('config').get();
+  const adminUids = configSnap?.data()?.adminUids;
+  if (Array.isArray(adminUids) && adminUids.length > 0) {
+    return adminUids.includes(uid);
+  }
+  return uid === ADMIN_UID_LEGACY;
+}
 
 function formatDateTime(date) {
   return date.toLocaleDateString('pt-BR', {
@@ -627,14 +657,8 @@ export const clientRespondToAppointmentProposal = onCall(
   }
 );
 
-/** UID do administrador (fabianoeugenio96@gmail.com). Só ele vê e acessa o painel admin. */
-const ADMIN_UID = '7rNwYcg61hcGgg6IeCRBjSytyBq1';
-
 /**
- * Painel admin: só retorna dados se request.auth.uid for o admin configurado.
- * Opcional: crie app_config/config com { adminUids: ["uid1", "uid2"] } para vários admins.
- * Se adminUids existir no Firestore, usa essa lista; senão usa ADMIN_UID acima.
- * Retorna { isAdmin: boolean, barberShops?: array }.
+ * Painel admin: dono por e-mail (Firebase Auth) ou UID em app_config/config.adminUids.
  */
 export const getAdminDashboard = onCall(
   { region: 'us-central1' },
@@ -643,12 +667,7 @@ export const getAdminDashboard = onCall(
       throw new HttpsError('unauthenticated', 'Faça login para acessar.');
     }
     const uid = request.auth.uid;
-    const configSnap = await firestore.collection('app_config').doc('config').get();
-    let adminUids = configSnap?.data()?.adminUids;
-    if (!Array.isArray(adminUids) || adminUids.length === 0) {
-      adminUids = [ADMIN_UID];
-    }
-    if (!adminUids.includes(uid)) {
+    if (!(await isPlatformAdmin(uid))) {
       return { isAdmin: false };
     }
     const shopsSnap = await firestore.collection('barbershops').get();
