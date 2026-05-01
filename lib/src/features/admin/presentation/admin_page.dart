@@ -5,9 +5,11 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/providers/admin_providers.dart';
+import '../../../core/providers/barber_shop_providers.dart';
+import '../../../core/providers/dashboard_tab_provider.dart';
+import '../../../core/providers/firebase_providers.dart';
 
-/// Painel do dono do app: lista todas as barbearias/salões que usam o sistema.
-/// Acesso só para UIDs em app_config/config.adminUids (configurado no Firestore).
+/// Painel do dono do app: lista negócios. Acesso por e-mail/API (Cloud Function).
 class AdminPage extends ConsumerWidget {
   const AdminPage({super.key});
 
@@ -18,6 +20,8 @@ class AdminPage extends ConsumerWidget {
     const designGray50 = Color(0xFFF9FAFB);
     const designGray200 = Color(0xFFE5E7EB);
     const designGray900 = Color(0xFF1A1D21);
+
+    final shop = ref.watch(barberShopProvider).valueOrNull;
 
     return Scaffold(
       backgroundColor: designGray50,
@@ -37,8 +41,16 @@ class AdminPage extends ConsumerWidget {
         surfaceTintColor: Colors.transparent,
         iconTheme: const IconThemeData(color: designGray900),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/dashboard'),
+          icon: Icon(shop != null ? Icons.arrow_back : Icons.logout_rounded),
+          tooltip: shop != null ? 'Meu negócio' : 'Sair',
+          onPressed: () async {
+            if (shop != null) {
+              context.go('/dashboard');
+            } else {
+              await ref.read(firebaseAuthProvider).signOut();
+              if (context.mounted) context.go('/login');
+            }
+          },
         ),
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(1),
@@ -79,8 +91,16 @@ class AdminPage extends ConsumerWidget {
                     ),
                     const SizedBox(height: 24),
                     FilledButton(
-                      onPressed: () => context.go('/dashboard'),
-                      child: const Text('Voltar ao dashboard'),
+                      onPressed: () async {
+                        final s = ref.read(barberShopProvider).valueOrNull;
+                        if (s != null) {
+                          if (context.mounted) context.go('/dashboard');
+                        } else {
+                          await ref.read(firebaseAuthProvider).signOut();
+                          if (context.mounted) context.go('/login');
+                        }
+                      },
+                      child: const Text('Voltar'),
                     ),
                   ],
                 ),
@@ -106,8 +126,16 @@ class AdminPage extends ConsumerWidget {
                     ),
                     const SizedBox(height: 24),
                     FilledButton(
-                      onPressed: () => context.go('/dashboard'),
-                      child: const Text('Voltar ao dashboard'),
+                      onPressed: () async {
+                        final s = ref.read(barberShopProvider).valueOrNull;
+                        if (s != null) {
+                          if (context.mounted) context.go('/dashboard');
+                        } else {
+                          await ref.read(firebaseAuthProvider).signOut();
+                          if (context.mounted) context.go('/login');
+                        }
+                      },
+                      child: const Text('Voltar'),
                     ),
                   ],
                 ),
@@ -134,6 +162,18 @@ class AdminPage extends ConsumerWidget {
                   style: GoogleFonts.poppins(
                     fontSize: 14,
                     color: const Color(0xFF5C636A),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    ref.read(ownerOnboardingRequestProvider.notifier).state = true;
+                    context.go('/dashboard');
+                  },
+                  icon: const Icon(Icons.add_business_outlined),
+                  label: Text(
+                    'Sou dono — cadastrar meu negócio',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                   ),
                 ),
                 const SizedBox(height: 20),

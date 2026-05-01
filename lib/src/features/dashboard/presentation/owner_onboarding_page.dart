@@ -11,6 +11,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/models/barber_shop.dart';
 import '../../../core/providers/auth_providers.dart';
 import '../../../core/providers/barber_shop_providers.dart';
+import '../../../core/providers/dashboard_tab_provider.dart';
 import '../../../core/providers/firebase_providers.dart';
 import '../../../core/utils/color_utils.dart';
 
@@ -406,6 +407,7 @@ class _OwnerOnboardingPageState extends ConsumerState<OwnerOnboardingPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
       ref.invalidate(barberShopProvider);
+      ref.read(ownerOnboardingRequestProvider.notifier).state = false;
       if (mounted) {
         context.go('/dashboard');
       }

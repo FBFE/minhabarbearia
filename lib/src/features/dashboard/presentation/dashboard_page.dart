@@ -55,9 +55,20 @@ class DashboardPage extends ConsumerWidget {
     const adminEmail = 'fabianoeugenio96@gmail.com';
     final isAdmin = isAdminFromApi || user?.email == adminEmail;
 
+    final wantOwnerOnboarding = ref.watch(ownerOnboardingRequestProvider);
+    final bypassAdminRedirect = wantOwnerOnboarding;
+
     return barberShopAsync.when(
       data: (shop) {
         if (shop == null) {
+          if (isAdmin && !bypassAdminRedirect) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) context.go('/admin');
+            });
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
           return const OwnerOnboardingPage(initialShop: null);
         }
         if (shop.onboardingScreen < 3) {
@@ -73,13 +84,19 @@ class DashboardPage extends ConsumerWidget {
           isAdmin: isAdmin,
         );
       },
-      loading: () => _DashboardScaffold(
-        userEmail: user?.email,
-        barberShop: null,
-        primaryColor: _defaultPrimary,
-        secondaryColor: _defaultSecondary,
-        isAdmin: isAdmin,
-      ),
+      loading: () {
+        // Admin sem negócio: evita scaffold do dono até sabermos que não há loja vinculada
+        if (isAdmin && !bypassAdminRedirect) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+        return _DashboardScaffold(
+          userEmail: user?.email,
+          barberShop: null,
+          primaryColor: _defaultPrimary,
+          secondaryColor: _defaultSecondary,
+          isAdmin: isAdmin,
+        );
+      },
       error: (e, _) => Center(child: Text('Erro: $e')),
     );
   }
