@@ -196,65 +196,126 @@ Future<bool> applyServiceConsumptionsForServices({
   final movementsRef =
       firestore.collection(barbershopsCollection).doc(slug).collection('stock_movements');
 
-  await firestore.runTransaction((tx) async {
-    for (final service in servicesToApply) {
-      for (final use in service.productConsumptions) {
-        final productSnap = await tx.get(productsRef.doc(use.productId));
-        if (!productSnap.exists || productSnap.data() == null) continue;
-        final product = Product.fromFirestore(productSnap.id, productSnap.data()!);
-        double costValue;
-        if (use.useStudio && use.consumptionPercent != null) {
-          final current = product.studioRemainingPercent ?? 0;
-          final newStudio =
-              (current - use.consumptionPercent!).clamp(0.0, double.infinity);
-          costValue = (use.consumptionPercent! / 100) * product.costPrice;
-          tx.update(productsRef.doc(product.id), {
-            'studioRemainingPercent': newStudio,
-            'lastUpdated': FieldValue.serverTimestamp(),
-          });
-          tx.set(
-            movementsRef.doc(),
-            StockMovement(
-              id: '',
-              type: 'service_use',
-              productId: product.id,
-              quantity: -use.consumptionPercent!,
-              value: costValue,
-              date: DateTime.now(),
-              reason: 'Uso no studio: ${service.name} (${use.consumptionPercent}%)',
-              linkedAppointmentId: appointmentId,
-              linkedServiceId: service.id,
-            ).toFirestore(),
-          );
-        } else {
-          final newStock =
-              (product.currentStock - use.quantity).clamp(0.0, double.infinity);
-          costValue = use.quantity * product.costPrice;
-          tx.update(productsRef.doc(product.id), {
-            'currentStock': newStock,
-            'lastUpdated': FieldValue.serverTimestamp(),
-          });
-          tx.set(
-            movementsRef.doc(),
-            StockMovement(
-              id: '',
-              type: 'service_use',
-              productId: product.id,
-              quantity: -use.quantity,
-              value: costValue,
-              date: DateTime.now(),
-              reason: 'Uso no serviço: ${service.name}',
-              linkedAppointmentId: appointmentId,
-              linkedServiceId: service.id,
-            ).toFirestore(),
-          );
-        }
+  // Passos (serviço + linha de consumo) aplicados depois só com escritas na transação.
+  final steps = <({Service service, ServiceProductUse use})>[];
+  for (final service in servicesToApply) {
+    for (final use in service.productConsumptions) {
+      steps.add((service: service, use: use));
+    }
+  }
+  if (steps.isEmpty) return false;
+
+  final productIds = steps.map((s) => s.use.productId).toSet();
+
+  var appliedConsumption = false;
+  await firestore.runTransaction((transaction) async {
+    // Firestore: todas as leituras devem ocorrer antes de qualquer escrita.
+    final stockById = <String, _ProductTxnDraft>{};
+    for (final pid in productIds) {
+      final snap = await transaction.get(productsRef.doc(pid));
+      if (!snap.exists || snap.data() == null) continue;
+      final product = Product.fromFirestore(snap.id, snap.data()!);
+      stockById[pid] = _ProductTxnDraft(product);
+    }
+
+    final movementsData = <Map<String, dynamic>>[];
+    for (final step in steps) {
+      final use = step.use;
+      final service = step.service;
+      final draft = stockById[use.productId];
+      if (draft == null) continue;
+
+      if (use.useStudio && use.consumptionPercent != null) {
+        final pct = use.consumptionPercent!;
+        final costValue = (pct / 100) * draft.costPrice;
+        draft.applyStudioPercent(pct);
+        movementsData.add(
+          StockMovement(
+            id: '',
+            type: 'service_use',
+            productId: draft.id,
+            quantity: -pct,
+            value: costValue,
+            date: DateTime.now(),
+            reason: 'Uso no studio: ${service.name} (${use.consumptionPercent}%)',
+            linkedAppointmentId: appointmentId,
+            linkedServiceId: service.id,
+          ).toFirestore(),
+        );
+      } else if (use.quantity > 0) {
+        final costValue = use.quantity * draft.costPrice;
+        draft.applyQuantity(use.quantity);
+        movementsData.add(
+          StockMovement(
+            id: '',
+            type: 'service_use',
+            productId: draft.id,
+            quantity: -use.quantity,
+            value: costValue,
+            date: DateTime.now(),
+            reason: 'Uso no serviço: ${service.name}',
+            linkedAppointmentId: appointmentId,
+            linkedServiceId: service.id,
+          ).toFirestore(),
+        );
       }
     }
+
+    appliedConsumption = movementsData.isNotEmpty;
+    if (!appliedConsumption) return;
+
+    for (final draft in stockById.values) {
+      if (!draft.touched) continue;
+      transaction.update(productsRef.doc(draft.id), draft.toFirestoreUpdate());
+    }
+    for (final m in movementsData) {
+      transaction.set(movementsRef.doc(), m);
+    }
   });
-  ref.invalidate(productsProvider(slug));
-  ref.invalidate(stockMovementsProvider(slug));
-  return true;
+  if (appliedConsumption) {
+    ref.invalidate(productsProvider(slug));
+    ref.invalidate(stockMovementsProvider(slug));
+  }
+  return appliedConsumption;
+}
+
+/// Rascunho de stock para uma transação: lê uma vez, aplica vários consumos em memória, grava uma vez.
+class _ProductTxnDraft {
+  _ProductTxnDraft(Product p)
+      : id = p.id,
+        currentStock = p.currentStock,
+        studioRemainingPercent = p.studioRemainingPercent,
+        costPrice = p.costPrice;
+
+  final String id;
+  double currentStock;
+  double? studioRemainingPercent;
+  final double costPrice;
+  bool touched = false;
+  bool _studioFieldTouched = false;
+
+  void applyStudioPercent(double pct) {
+    touched = true;
+    _studioFieldTouched = true;
+    final current = studioRemainingPercent ?? 0;
+    studioRemainingPercent = (current - pct).clamp(0.0, double.infinity);
+  }
+
+  void applyQuantity(double qty) {
+    touched = true;
+    currentStock = (currentStock - qty).clamp(0.0, double.infinity);
+  }
+
+  Map<String, dynamic> toFirestoreUpdate() {
+    final m = <String, dynamic>{
+      'currentStock': currentStock,
+      'lastUpdated': FieldValue.serverTimestamp(),
+    };
+    if (_studioFieldTouched || studioRemainingPercent != null) {
+      m['studioRemainingPercent'] = studioRemainingPercent;
+    }
+    return m;
+  }
 }
 
 /// Lê o documento do agendamento, resolve os [Service] e aplica consumo de produtos.

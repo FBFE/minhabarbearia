@@ -3662,26 +3662,39 @@ class _ServicesCard extends ConsumerWidget {
             return LayoutBuilder(
               builder: (context, constraints) {
                 final w = constraints.maxWidth;
-                const spacing = 12.0;
-                final crossAxisCount = w >= 560 ? 2 : 1;
-                final cellW = (w - spacing * (crossAxisCount > 1 ? 1 : 0)) / crossAxisCount;
-                final side = (cellW - 28).clamp(120.0, kServicePhotoEditorPreviewSide);
-                final estHeight = side + 178;
-                final aspect = (cellW / estHeight).clamp(0.48, 0.92);
+                const spacing = 10.0;
+                // Mais colunas em ecrãs estreitos: cartões menores em grelha (não lista full-width).
+                final crossAxisCount = w >= 900
+                    ? 4
+                    : w >= 640
+                        ? 3
+                        : w >= 300
+                            ? 2
+                            : 1;
+                final gaps = spacing * (crossAxisCount > 1 ? crossAxisCount - 1 : 0);
+                final cellW = (w - gaps) / crossAxisCount;
+                // Miniatura só no catálogo (o editor continua com kServicePhotoEditorPreviewSide).
+                const catalogThumbCap = 112.0;
+                final side = (cellW - 16).clamp(56.0, catalogThumbCap);
+                // Altura do cartão ≈ imagem + rodapé (evita overflow no GridView).
+                const footerH = 124.0;
+                final estHeight = side + footerH;
+                final aspect = (cellW / estHeight).clamp(0.52, 0.92);
 
                 Widget serviceTile(int i, Service s) {
                   final highlight = i == 0;
                   final url = s.imageUrl?.trim();
                   final hasUrl = url != null && url.isNotEmpty;
+                  final iconSz = side < 88 ? 22.0 : 28.0;
                   return Opacity(
                     opacity: s.active ? 1 : 0.62,
                     child: Material(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(12),
                       elevation: 0,
                       child: Container(
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: highlight ? const Color(0xFFFFC107) : _designGray200,
                             width: highlight ? 1.5 : 1,
@@ -3689,8 +3702,8 @@ class _ServicesCard extends ConsumerWidget {
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.06),
-                              blurRadius: 10,
-                              offset: const Offset(0, 3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
                             ),
                           ],
                         ),
@@ -3700,13 +3713,13 @@ class _ServicesCard extends ConsumerWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Padding(
-                              padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                              padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
                               child: Stack(
                                 clipBehavior: Clip.none,
                                 children: [
                                   Center(
                                     child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(8),
                                       child: SizedBox(
                                         width: side,
                                         height: side,
@@ -3728,7 +3741,7 @@ class _ServicesCard extends ConsumerWidget {
                                                       color: highlight
                                                           ? const Color(0xFFFF8F00)
                                                           : _designGray600,
-                                                      size: 40,
+                                                      size: iconSz,
                                                     ),
                                                   ),
                                                 ),
@@ -3753,7 +3766,7 @@ class _ServicesCard extends ConsumerWidget {
                                                       color: highlight
                                                           ? const Color(0xFFFF8F00)
                                                           : _designGray600,
-                                                      size: 40,
+                                                      size: iconSz,
                                                     ),
                                                   ),
                                                 ),
@@ -3763,17 +3776,17 @@ class _ServicesCard extends ConsumerWidget {
                                   ),
                                   if (!s.active)
                                     Positioned(
-                                      top: 4,
-                                      right: 4,
+                                      top: 2,
+                                      right: 2,
                                       child: Material(
                                         color: const Color(0xFF374151),
-                                        borderRadius: BorderRadius.circular(8),
+                                        borderRadius: BorderRadius.circular(6),
                                         child: Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                           child: Text(
-                                            'Oculto no link',
+                                            'Oculto',
                                             style: GoogleFonts.poppins(
-                                              fontSize: 10,
+                                              fontSize: 9,
                                               fontWeight: FontWeight.w600,
                                               color: Colors.white,
                                             ),
@@ -3785,7 +3798,7 @@ class _ServicesCard extends ConsumerWidget {
                               ),
                             ),
                             Padding(
-                              padding: const EdgeInsets.fromLTRB(10, 8, 6, 10),
+                              padding: const EdgeInsets.fromLTRB(6, 6, 4, 6),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
@@ -3794,42 +3807,44 @@ class _ServicesCard extends ConsumerWidget {
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     style: GoogleFonts.poppins(
-                                      fontSize: 15,
+                                      fontSize: 12.5,
                                       fontWeight: FontWeight.w600,
                                       color: _designGray900,
+                                      height: 1.15,
                                     ),
                                   ),
-                                  const SizedBox(height: 6),
+                                  const SizedBox(height: 4),
                                   Row(
                                     children: [
-                                      Icon(Icons.schedule, size: 14, color: _designGray600),
-                                      const SizedBox(width: 4),
+                                      Icon(Icons.schedule, size: 12, color: _designGray600),
+                                      const SizedBox(width: 3),
                                       Expanded(
                                         child: Text(
                                           _durLabel(s),
                                           style: GoogleFonts.poppins(
-                                            fontSize: 12,
+                                            fontSize: 11,
                                             color: _designGray600,
                                           ),
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
                                       Text(
                                         s.priceFormatted,
                                         style: GoogleFonts.poppins(
-                                          fontSize: 15,
+                                          fontSize: 12.5,
                                           fontWeight: FontWeight.w800,
                                           color: _designGray900,
                                         ),
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 2),
                                   Row(
                                     children: [
                                       Tooltip(
                                         message: 'Mostrar no link de agendamento',
                                         child: Transform.scale(
-                                          scale: 0.82,
+                                          scale: 0.74,
                                           child: Switch(
                                             value: s.active,
                                             onChanged: (v) =>
@@ -3839,13 +3854,18 @@ class _ServicesCard extends ConsumerWidget {
                                       ),
                                       const Spacer(),
                                       IconButton(
-                                        icon: const Icon(Icons.edit_outlined, size: 21),
+                                        icon: const Icon(Icons.edit_outlined, size: 18),
+                                        constraints: const BoxConstraints(minWidth: 36, minHeight: 34),
+                                        padding: EdgeInsets.zero,
                                         color: _designGray600,
                                         onPressed: () => _openServiceForm(context, ref, slug, s),
                                         visualDensity: VisualDensity.compact,
                                       ),
                                       IconButton(
-                                        icon: Icon(Icons.delete_outline, size: 21, color: Theme.of(context).colorScheme.error),
+                                        icon: Icon(Icons.delete_outline, size: 18,
+                                            color: Theme.of(context).colorScheme.error),
+                                        constraints: const BoxConstraints(minWidth: 36, minHeight: 34),
+                                        padding: EdgeInsets.zero,
                                         onPressed: () => _deleteService(context, ref, slug, s.id),
                                         visualDensity: VisualDensity.compact,
                                       ),
