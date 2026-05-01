@@ -1,0 +1,18 @@
+@import './tailwind.css';
+@import './theme.css';
+@import './fonts.css';
+
+/* Responsive utilities for mobile safe areas */
+.safe-area-inset-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* Prevent layout shift during loading */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Smooth scrolling for better UX */
+html {
+  scroll-behavior: smooth;
+}

@@ -1,0 +1,4 @@
+# Comandos: supabase link; supabase secrets set (ver docs); supabase functions deploy stripe-webhook
+# https://supabase.com/docs/guides/functions
+[functions]
+verify_jwt = false

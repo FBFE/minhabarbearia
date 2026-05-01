@@ -1,0 +1,39 @@
+# Flutter
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Stripe (nunca commitar — usar só localmente com scripts/apply-stripe-secrets.ps1)
+stripe_sk.txt
+stripe_whsec.txt
+scripts/stripe_*.txt
+
+# Supabase (segredos locais)
+supabase/.env
+
+# Firebase
+*.jks
+*.p12
+google-services.json
+GoogleService-Info.plist
+
+# Node (Cloud Functions)
+functions/node_modules/
+
+# Android local SDK path
+**/android/local.properties
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Firebase CLI cache e logs locais
+.firebase/
+debug.log

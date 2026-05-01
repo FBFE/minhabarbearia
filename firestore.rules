@@ -1,0 +1,97 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Dono do negócio (barbershops/{slug}.ownerUid == auth.uid)
+    function isOwner(slug) {
+      return request.auth != null
+          && get(/databases/$(database)/documents/barbershops/$(slug)).data.ownerUid == request.auth.uid;
+    }
+
+    // --- Barbershops (documento principal por slug) ---
+    // Leitura pública (página do negócio); escrita só dono
+    match /barbershops/{slug} {
+      allow read: if true;
+      allow create: if request.auth != null
+          && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isOwner(slug);
+    }
+
+    // --- Clientes do negócio (barbershops/{slug}/clients) ---
+    // Leitura: pública (login por WhatsApp + data nascimento) e dono
+    // Criação: pública (cadastro) ou dono
+    // Atualização/exclusão: dono ou o próprio cliente (authUid)
+    match /barbershops/{slug}/clients/{clientId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if request.auth != null
+          && (isOwner(slug) || resource.data.authUid == request.auth.uid);
+    }
+
+    // --- Serviços (barbershops/{slug}/services) ---
+    // Leitura pública (lista na página); escrita só dono
+    match /barbershops/{slug}/services/{serviceId} {
+      allow read: if true;
+      allow write: if isOwner(slug);
+    }
+
+    // --- Vouchers (barbershops/{slug}/vouchers) ---
+    // Leitura: pública (validar código na página); escrita só dono
+    match /barbershops/{slug}/vouchers/{voucherId} {
+      allow read: if true;
+      allow write: if isOwner(slug);
+    }
+
+    // --- Produtos, movimentações de estoque, despesas ---
+    // Apenas dono do negócio
+    match /barbershops/{slug}/products/{productId} {
+      allow read, write: if isOwner(slug);
+    }
+    match /barbershops/{slug}/stock_movements/{movId} {
+      allow read, write: if isOwner(slug);
+    }
+    match /barbershops/{slug}/expenses/{expenseId} {
+      allow read, write: if isOwner(slug);
+    }
+    match /barbershops/{slug}/recurring_expenses/{id} {
+      allow read, write: if isOwner(slug);
+    }
+
+    // --- Funcionários (barbershops/{slug}/staff) ---
+    // Leitura pública (lista na página de agendamento e login funcionário); escrita só dono
+    match /barbershops/{slug}/staff/{staffId} {
+      allow read: if true;
+      allow write: if isOwner(slug);
+    }
+
+    // --- Avaliações (barbershops/{slug}/reviews) ---
+    // Cliente pode criar após atendimento; só o dono lê
+    match /barbershops/{slug}/reviews/{reviewId} {
+      allow read: if isOwner(slug);
+      allow create: if true;
+      allow update, delete: if isOwner(slug);
+    }
+
+    // --- Faturas / histórico (leitura dono; escrita só Cloud Functions) ---
+    match /barbershops/{slug}/billingEvents/{eventId} {
+      allow read: if isOwner(slug);
+      allow write: if false;
+    }
+
+    // --- Agendamentos (coleção raiz appointments) ---
+    // Criação: pública (agendamento na página)
+    // Leitura/atualização/exclusão: apenas usuário autenticado (dono usa no dashboard;
+    // cliente precisa estar logado para ver a agenda)
+    match /appointments/{appointmentId} {
+      allow read: if request.auth != null;
+      allow create: if true;
+      allow update, delete: if request.auth != null
+          && get(/databases/$(database)/documents/barbershops/$(resource.data.barberShopId)).data.ownerUid == request.auth.uid;
+    }
+
+    // --- Config do app (adminUids): só acessível via Cloud Functions (admin SDK)
+    match /app_config/{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
